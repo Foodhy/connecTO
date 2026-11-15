@@ -26,6 +26,12 @@ struct WireMessageTests {
             .rejected(.badCode),
             .cursor(x: 0.25, y: 0.75),
             .quality(longSide: 1920),
+            .screen(2),
+            .audio(true),
+            .displays(
+                items: [SharedDisplay(id: 1, name: "Studio", width: 1920, height: 1080)],
+                active: 1
+            ),
         ]
         for message in messages {
             var decoder = FrameDecoder()

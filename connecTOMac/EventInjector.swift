@@ -5,6 +5,13 @@ final class EventInjector {
     private let source = CGEventSource(stateID: .combinedSessionState)
     /// Mission Control ignora teclas que no parecen de un teclado real.
     private let keyboardSource = CGEventSource(stateID: .hidSystemState)
+    /// Control+flecha solo cambia de escritorio si la secuencia sale de una fuente privada
+    /// y el Control se pulsa de verdad, no como una bandera pegada a la flecha.
+    private let missionSource: CGEventSource? = {
+        let source = CGEventSource(stateID: .privateState)
+        source?.localEventsSuppressionInterval = 0
+        return source
+    }()
     private var leftIsDown = false
     private var rightIsDown = false
     private var leftClickCount = 1
@@ -28,7 +35,7 @@ final class EventInjector {
             postText(text)
         case .media(let action):
             applyMedia(action)
-        case .hello, .pair, .paired, .needCode, .rejected, .ping, .pong, .videoHello, .screenUnavailable, .quality:
+        case .hello, .pair, .paired, .needCode, .rejected, .ping, .pong, .videoHello, .screenUnavailable, .quality, .displays, .screen, .audio:
             break
         }
     }
@@ -142,6 +149,12 @@ final class EventInjector {
     }
 
     private func postKey(code: UInt16, phase: ButtonPhase, modifiers: KeyModifiers) {
+        if isSpaceChord(code, modifiers) {
+            if phase == .down {
+                postSpaceChord(code)
+            }
+            return
+        }
         guard let event = CGEvent(
             keyboardEventSource: keyboardSource,
             virtualKey: CGKeyCode(code),
@@ -149,6 +162,26 @@ final class EventInjector {
         ) else { return }
         event.flags = flags(modifiers)
         event.post(tap: .cghidEventTap)
+    }
+
+    /// Anterior, Ventanas y Siguiente. Mission Control no anima el cambio si solo
+    /// recibe la flecha con la bandera de Control.
+    private func isSpaceChord(_ code: UInt16, _ modifiers: KeyModifiers) -> Bool {
+        modifiers == .control && (code == SpecialKey.left || code == SpecialKey.right || code == SpecialKey.up)
+    }
+
+    private func postSpaceChord(_ arrow: UInt16) {
+        let control: CGKeyCode = 0x3B
+        postSessionKey(control, down: true)
+        postSessionKey(CGKeyCode(arrow), down: true)
+        Thread.sleep(forTimeInterval: 0.03)
+        postSessionKey(CGKeyCode(arrow), down: false)
+        postSessionKey(control, down: false)
+    }
+
+    private func postSessionKey(_ code: CGKeyCode, down: Bool) {
+        guard let event = CGEvent(keyboardEventSource: missionSource, virtualKey: code, keyDown: down) else { return }
+        event.post(tap: .cgSessionEventTap)
     }
 
     private func postText(_ text: String) {

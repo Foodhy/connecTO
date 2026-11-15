@@ -78,6 +78,7 @@ final class TrackpadCanvas: UIView {
         super.init(frame: frame)
         isMultipleTouchEnabled = true
         backgroundColor = .clear
+        addGestureRecognizer(PointerScroll.recognizer(target: self, action: #selector(pointerScrolled(_:))))
     }
 
     required init?(coder: NSCoder) {
@@ -133,6 +134,13 @@ final class TrackpadCanvas: UIView {
         clear(touches)
         releaseDrag()
         resetGesture()
+    }
+
+    @objc private func pointerScrolled(_ gesture: UIPanGestureRecognizer) {
+        let delta = gesture.translation(in: self)
+        guard delta != .zero else { return }
+        gesture.setTranslation(.zero, in: self)
+        onScroll(Double(delta.x), Double(delta.y))
     }
 
     private func sendScroll(for touches: Set<UITouch>) {

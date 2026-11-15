@@ -1,3 +1,4 @@
+import AppKit
 import CoreMedia
 import CoreVideo
 import Foundation
@@ -19,14 +20,22 @@ nonisolated final class ScreenCapturer: NSObject, SCStreamOutput, SCStreamDelega
     private var frameStorage = CGRect.zero
     private var running = false
     private var startToken = 0
+    private var wantsAudio = false
+    private var audioFormatSent = false
+    private let audioQueue = DispatchQueue(label: "connecTO.audio")
+    private let audioTap = AudioTap()
 
-    func start(longSide: Int) async throws -> CGRect {
+    func start(longSide: Int, displayID: UInt32?, captureAudio: Bool) async throws -> CaptureStart {
         stop()
         startToken += 1
         let token = startToken
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         guard token == startToken else { throw CaptureError.replaced }
-        guard let display = content.displays.first(where: { $0.displayID == CGMainDisplayID() }) ?? content.displays.first else {
+        let names = await MainActor.run { ScreenCapturer.displayNames() }
+        let displays = Self.sharedDisplays(from: content.displays, names: names)
+        let mainID = CGMainDisplayID()
+        guard let chosenID = DisplayList.resolvedID(preferred: displayID, displays: displays, mainID: mainID),
+              let display = content.displays.first(where: { $0.displayID == chosenID }) else {
             throw CaptureError.noDisplay
         }
         let nativeLong = Double(max(display.width, display.height))
@@ -45,6 +54,12 @@ nonisolated final class ScreenCapturer: NSObject, SCStreamOutput, SCStreamDelega
         configuration.minimumFrameInterval = CMTime(value: 1, timescale: 30)
         configuration.queueDepth = 4
         configuration.scalesToFit = true
+        if captureAudio {
+            configuration.capturesAudio = true
+            configuration.sampleRate = 48_000
+            configuration.channelCount = 2
+            configuration.excludesCurrentProcessAudio = true
+        }
 
         let compression = try makeSession(width: width, height: height)
         guard token == startToken else {
@@ -58,11 +73,23 @@ nonisolated final class ScreenCapturer: NSObject, SCStreamOutput, SCStreamDelega
         outputWidth = width
         outputHeight = height
         frameStorage = displayFrame
+        wantsAudio = captureAudio
+        audioFormatSent = false
         running = true
         stateLock.unlock()
+        audioTap.reset()
 
         let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
-        try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
+        try stream.addStreamOutput(self, type: SCStreamOutputType.screen, sampleHandlerQueue: queue)
+        var audioStarted = false
+        if captureAudio {
+            do {
+                try stream.addStreamOutput(self, type: SCStreamOutputType.audio, sampleHandlerQueue: audioQueue)
+                audioStarted = true
+            } catch {
+                audioStarted = false
+            }
+        }
         try await stream.startCapture()
         guard token == startToken else {
             let stale = stream
@@ -70,7 +97,7 @@ nonisolated final class ScreenCapturer: NSObject, SCStreamOutput, SCStreamDelega
             throw CaptureError.replaced
         }
         self.stream = stream
-        return displayFrame
+        return CaptureStart(frame: displayFrame, displayID: display.displayID, audio: audioStarted, displays: displays)
     }
 
     func stop() {
@@ -89,9 +116,19 @@ nonisolated final class ScreenCapturer: NSObject, SCStreamOutput, SCStreamDelega
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        guard type == .screen, CMSampleBufferIsValid(sampleBuffer), let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
-            return
+        guard CMSampleBufferIsValid(sampleBuffer) else { return }
+        switch type {
+        case .screen:
+            emitScreen(sampleBuffer)
+        case .audio:
+            emitAudio(sampleBuffer)
+        default:
+            break
         }
+    }
+
+    private func emitScreen(_ sampleBuffer: CMSampleBuffer) {
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         guard let compression = currentSession() else { return }
         let presentation = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         var flags = VTEncodeInfoFlags()
@@ -105,6 +142,21 @@ nonisolated final class ScreenCapturer: NSObject, SCStreamOutput, SCStreamDelega
             sourceFrameRefcon: nil,
             infoFlagsOut: &flags
         )
+    }
+
+    private func emitAudio(_ sampleBuffer: CMSampleBuffer) {
+        stateLock.lock()
+        let active = running && wantsAudio
+        let needsFormat = !audioFormatSent
+        stateLock.unlock()
+        guard active, let converted = audioTap.convert(sampleBuffer) else { return }
+        if needsFormat {
+            stateLock.lock()
+            audioFormatSent = true
+            stateLock.unlock()
+            onPacket(.audioFormat(sampleRate: converted.rate, channels: converted.channels))
+        }
+        onPacket(.audio(data: converted.pcm))
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
@@ -221,10 +273,55 @@ nonisolated final class ScreenCapturer: NSObject, SCStreamOutput, SCStreamDelega
     }
 }
 
+nonisolated struct CaptureStart: Equatable, Sendable {
+    var frame: CGRect
+    var displayID: UInt32
+    var audio: Bool
+    var displays: [SharedDisplay]
+}
+
 enum CaptureError: Error {
     case noDisplay
     case encoder
     case replaced
+}
+
+extension ScreenCapturer {
+    fileprivate static func sharedDisplays(
+        from displays: [SCDisplay],
+        names: [CGDirectDisplayID: String]
+    ) -> [SharedDisplay] {
+        let listed = displays.map { display in
+            SharedDisplay(
+                id: display.displayID,
+                name: names[display.displayID] ?? "Pantalla",
+                width: display.width,
+                height: display.height
+            )
+        }
+        return DisplayList.ordered(listed, mainID: CGMainDisplayID())
+    }
+
+    @MainActor
+    private static func displayNames() -> [CGDirectDisplayID: String] {
+        var names: [CGDirectDisplayID: String] = [:]
+        for screen in NSScreen.screens {
+            guard let id = displayID(of: screen) else { continue }
+            let name = screen.localizedName.trimmingCharacters(in: .whitespacesAndNewlines)
+            names[id] = name.isEmpty ? "Pantalla" : name
+        }
+        return names
+    }
+
+    private static func displayID(of screen: NSScreen) -> CGDirectDisplayID? {
+        let key = NSDeviceDescriptionKey("NSScreenNumber")
+        switch screen.deviceDescription[key] {
+        case let number as NSNumber:
+            return number.uint32Value
+        default:
+            return nil
+        }
+    }
 }
 
 extension ScreenCapturer {

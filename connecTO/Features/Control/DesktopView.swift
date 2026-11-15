@@ -44,6 +44,11 @@ private struct DesktopRepresentable: UIViewRepresentable {
         view.videoSize = client.videoSize
         view.dragArmed = dragArmed
         view.clickArmed = clickArmed
+        if view.trackedDisplay != client.activeDisplay {
+            view.trackedDisplay = client.activeDisplay
+            view.resetZoom()
+        }
+        view.layoutVideo()
     }
 
     final class Coordinator {
@@ -57,6 +62,7 @@ private struct DesktopRepresentable: UIViewRepresentable {
 
 final class DesktopCanvas: UIView {
     var videoSize = CGSize.zero
+    var trackedDisplay: UInt32 = 0
     var onCursor: (Double, Double) -> Void = { _, _ in }
     var dragArmed = false
     var clickArmed = false
@@ -71,6 +77,11 @@ final class DesktopCanvas: UIView {
     private var travel: CGFloat = 0
     private var usedTwoFingers = false
     private var holding = false
+    private var zoom: CGFloat = 1
+    private var zoomOrigin = CGPoint.zero
+    private var pinchBase: CGFloat = 1
+    private var pinchAnchor = CGPoint.zero
+    private var pinchActive = false
 
     override var canBecomeFirstResponder: Bool { true }
 
@@ -80,8 +91,14 @@ final class DesktopCanvas: UIView {
         backgroundColor = .black
         player.displayLayer.frame = bounds
         layer.addSublayer(player.displayLayer)
+        clipsToBounds = true
         let hover = UIHoverGestureRecognizer(target: self, action: #selector(pointerMoved(_:)))
         addGestureRecognizer(hover)
+        let pinch = UIPinchGestureRecognizer(target: self, action: #selector(pinched(_:)))
+        pinch.cancelsTouchesInView = false
+        pinch.delegate = self
+        addGestureRecognizer(pinch)
+        addGestureRecognizer(PointerScroll.recognizer(target: self, action: #selector(pointerScrolled(_:))))
     }
 
     required init?(coder: NSCoder) {
@@ -95,7 +112,16 @@ final class DesktopCanvas: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        player.displayLayer.frame = bounds
+        layoutVideo()
+    }
+
+    func layoutVideo() {
+        player.displayLayer.frame = contentFrame()
+    }
+
+    func resetZoom() {
+        zoom = 1
+        pinchActive = false
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -191,7 +217,66 @@ final class DesktopCanvas: UIView {
     }
 
     private func normalized(_ location: CGPoint) -> (x: Double, y: Double)? {
-        ScreenMapping.normalizedPoint(touch: location, viewSize: bounds.size, videoSize: videoSize)
+        guard ScreenMapping.fittedFrame(viewSize: bounds.size, videoSize: videoSize) != nil else { return nil }
+        return ScreenMapping.normalizedPoint(touch: location, contentFrame: contentFrame())
+    }
+
+    private func contentFrame() -> CGRect {
+        guard let fitted = ScreenMapping.fittedFrame(viewSize: bounds.size, videoSize: videoSize) else {
+            return bounds
+        }
+        guard zoom > 1 else { return fitted }
+        let origin = ScreenMapping.clampZoomOrigin(
+            origin: zoomOrigin,
+            contentSize: CGSize(width: fitted.width * zoom, height: fitted.height * zoom),
+            viewSize: bounds.size
+        )
+        return ScreenMapping.zoomedFrame(fitted: fitted, zoom: zoom, origin: origin)
+    }
+
+    @objc private func pinched(_ gesture: UIPinchGestureRecognizer) {
+        guard let fitted = ScreenMapping.fittedFrame(viewSize: bounds.size, videoSize: videoSize) else { return }
+        switch gesture.state {
+        case .began:
+            pinchBase = zoom
+            pinchActive = false
+            pinchAnchor = anchor(for: gesture.location(in: self), fitted: fitted)
+        case .changed:
+            let proposed = min(6, max(1, pinchBase * gesture.scale))
+            if !pinchActive {
+                guard abs(proposed - pinchBase) >= 0.12 else { return }
+                pinchActive = true
+                pinchAnchor = anchor(for: gesture.location(in: self), fitted: fitted)
+            }
+            let location = gesture.location(in: self)
+            zoom = proposed
+            zoomOrigin = CGPoint(
+                x: location.x - pinchAnchor.x * zoom,
+                y: location.y - pinchAnchor.y * zoom
+            )
+            layoutVideo()
+        default:
+            if zoom < 1.02 { zoom = 1 }
+            pinchActive = false
+            layoutVideo()
+        }
+    }
+
+    @objc private func pointerScrolled(_ gesture: UIPanGestureRecognizer) {
+        let delta = gesture.translation(in: self)
+        guard delta != .zero else { return }
+        gesture.setTranslation(.zero, in: self)
+        onScroll(Double(delta.x), Double(delta.y))
+    }
+
+    private func anchor(for location: CGPoint, fitted: CGRect) -> CGPoint {
+        let frame = contentFrame()
+        let x = (location.x - frame.origin.x) / max(zoom, 1)
+        let y = (location.y - frame.origin.y) / max(zoom, 1)
+        return CGPoint(
+            x: min(max(0, x), fitted.width),
+            y: min(max(0, y), fitted.height)
+        )
     }
 
     private func moveCursor(to location: CGPoint) {
@@ -206,6 +291,7 @@ final class DesktopCanvas: UIView {
     }
 
     private func sendScroll(_ touches: [UITouch]) {
+        guard !pinchActive else { return }
         var dx = 0.0
         var dy = 0.0
         var samples = 0
@@ -278,6 +364,15 @@ final class DesktopCanvas: UIView {
     }
 }
 
+extension DesktopCanvas: UIGestureRecognizerDelegate {
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        true
+    }
+}
+
 final class H264Display {
     let displayLayer = AVSampleBufferDisplayLayer()
     private var format: CMFormatDescription?
@@ -293,6 +388,8 @@ final class H264Display {
             format = makeFormat(sets)
             displayLayer.sampleBufferRenderer.flush()
             timestamp = .zero
+        case .audioFormat, .audio:
+            break
         case .sample(let isKeyframe, let data):
             guard let format, let sample = makeSample(data: data, format: format, keyframe: isKeyframe) else { return }
             if displayLayer.sampleBufferRenderer.status == .failed {

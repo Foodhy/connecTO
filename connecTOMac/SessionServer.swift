@@ -20,6 +20,10 @@ final class SessionServer {
     private let capturer = ScreenCapturer()
     private var displayFrame = CGRect.zero
     private var preferredLongSide = 1920
+    private var preferredDisplayID: UInt32?
+    private var activeDisplayID: UInt32 = 0
+    private var redirectingAudio = false
+    private var savedMute: Bool?
     private var capturing = false
     private var captureGeneration = 0
 
@@ -176,9 +180,14 @@ final class SessionServer {
             }
             send(reply)
         case .input(let input):
-            if case .quality(let longSide) = input {
+            switch input {
+            case .quality(let longSide):
                 applyQuality(longSide)
-            } else {
+            case .screen(let displayID):
+                applyScreen(displayID)
+            case .audio(let enabled):
+                applyAudio(enabled)
+            default:
                 injector.apply(input, displayFrame: displayFrame)
             }
         case .drop:
@@ -275,6 +284,36 @@ final class SessionServer {
         restartCapture()
     }
 
+    private func applyScreen(_ displayID: UInt32) {
+        guard displayID != activeDisplayID else { return }
+        preferredDisplayID = displayID
+        guard capturing else { return }
+        restartCapture()
+    }
+
+    private func applyAudio(_ enabled: Bool) {
+        guard enabled != redirectingAudio else { return }
+        redirectingAudio = enabled
+        if !enabled {
+            restoreMute()
+        }
+        guard capturing else { return }
+        restartCapture()
+    }
+
+    private func silenceMac() {
+        if savedMute == nil {
+            savedMute = VolumeController.isMuted()
+        }
+        VolumeController.setMuted(true)
+    }
+
+    private func restoreMute() {
+        guard let previous = savedMute else { return }
+        VolumeController.setMuted(previous)
+        savedMute = nil
+    }
+
     private func restartCapture() {
         captureGeneration += 1
         capturing = false
@@ -303,9 +342,22 @@ final class SessionServer {
         }
         Task { @MainActor in
             do {
-                let frame = try await capturer.start(longSide: preferredLongSide)
+                let started = try await capturer.start(
+                    longSide: preferredLongSide,
+                    displayID: preferredDisplayID,
+                    captureAudio: redirectingAudio
+                )
                 guard captureGeneration == generation else { return }
-                displayFrame = frame
+                displayFrame = started.frame
+                activeDisplayID = started.displayID
+                if redirectingAudio && started.audio {
+                    silenceMac()
+                } else if redirectingAudio {
+                    redirectingAudio = false
+                    restoreMute()
+                    send(.audio(false))
+                }
+                send(.displays(items: started.displays, active: started.displayID))
             } catch CaptureError.replaced {
                 return
             } catch {
@@ -324,6 +376,12 @@ final class SessionServer {
         capturing = false
         captureGeneration += 1
         displayFrame = .zero
+        activeDisplayID = 0
+        if redirectingAudio {
+            redirectingAudio = false
+            restoreMute()
+            send(.audio(false))
+        }
         capturer.stop()
         let connection = videoConnection
         videoConnection = nil

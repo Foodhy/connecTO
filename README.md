@@ -83,12 +83,15 @@ The next time, open both apps. A trusted iPad reconnects to the last Mac on its 
 The picture is the Mac’s screen.
 
 - One finger moves the pointer. A tap does **not** click until **Clic** is on (it turns orange). Tap **Clic** again to turn it off.
-- Two fingers scroll.
+- Two fingers scroll the Mac. Pinch to zoom the picture, pinch closed to zoom out, and move both fingers together to look around the magnified image.
+- Sliding a finger on a Magic Mouse scrolls up, down, or sideways.
 - **Clic derecho** right-clicks where the pointer already is.
 - **Arrastrar** (orange) holds the button down while your finger is on the picture. **Clic** and **Arrastrar** are never both on.
 - **Teclado** opens a bar with ⌘ ⌥ ⇧ ⌃, esc, tab, delete, return, and the arrows. Text you type is sent to the Mac.
 - **Anterior**, **Ventanas**, and **Siguiente** are the Mission Control shortcuts above.
-- The bottom row is volume down, mute, volume up, previous track, play/pause, and next track.
-- **Desconectar** returns to the Mac list.
+- The display button chooses which monitor is shown. The pointer lands on that screen.
+- **Sonido** plays on the Mac, or on the iPad. While it plays on the iPad, the Mac output is muted and comes back when you choose **En el Mac**.
+- Volume, mute, and playback sit in the same row as the other controls. Scroll that row sideways if they do not fit.
+- **Desconectar**, the red button at the bottom, asks before it returns to the Mac list.
 
 If the Mac is not sharing the screen, the iPad says so and falls back to a trackpad until Screen Recording is on.

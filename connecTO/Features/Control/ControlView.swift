@@ -6,6 +6,7 @@ struct ControlView: View {
     @State private var dragArmed = false
     @State private var clickArmed = false
     @State private var keyboardVisible = false
+    @State private var confirmDisconnect = false
     @AppStorage(SessionClient.longSideKey) private var longSide = 1920
     @State private var qualityTask: Task<Void, Never>?
 
@@ -13,21 +14,29 @@ struct ControlView: View {
         NavigationStack {
             VStack(spacing: 12) {
                 surface
-                actionRow
                 if keyboardVisible {
                     KeyboardBarView(client: client)
                 }
-                MediaBarView(client: client)
+                actionRow
+                disconnectButton
             }
             .padding(16)
             .navigationTitle(client.macName)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Desconectar", action: onDisconnect)
-                }
+            .alert("¿Seguro que quieres desconectar?", isPresented: $confirmDisconnect) {
+                Button("Desconectar", role: .destructive, action: onDisconnect)
+                Button("Cancelar", role: .cancel) {}
+            } message: {
+                Text("Se cierra la sesión con \(client.macName).")
             }
         }
+    }
+
+    private var disconnectButton: some View {
+        Button("Desconectar") { confirmDisconnect = true }
+            .buttonStyle(.borderedProminent)
+            .tint(.red)
+            .frame(maxWidth: .infinity)
     }
 
     @ViewBuilder
@@ -83,8 +92,72 @@ struct ControlView: View {
                 spaceButton("chevron.left", SpecialKey.left, "Anterior", "Escritorio anterior")
                 spaceButton("chevron.up", SpecialKey.up, "Ventanas", "Ver todas las ventanas")
                 spaceButton("chevron.right", SpecialKey.right, "Siguiente", "Escritorio siguiente")
+                displayMenu
+                soundMenu
+                MediaBarView(client: client)
                 qualityMenu
             }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var displayMenu: some View {
+        Menu {
+            if client.displays.isEmpty {
+                Text("Buscando pantallas…")
+            } else {
+                ForEach(client.displays, id: \.id) { display in
+                    Button {
+                        client.selectDisplay(display.id)
+                    } label: {
+                        screenLabel(display)
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "display")
+                .frame(width: 44, height: 36)
+        }
+        .buttonStyle(.bordered)
+        .accessibilityLabel("Pantalla")
+    }
+
+    private var soundMenu: some View {
+        Menu {
+            Button {
+                client.setHearsOnPad(false)
+            } label: {
+                if client.hearsAudio {
+                    Text("En el Mac")
+                } else {
+                    Label("En el Mac", systemImage: "checkmark")
+                }
+            }
+            Button {
+                client.setHearsOnPad(true)
+            } label: {
+                if client.hearsAudio {
+                    Label("En el iPad", systemImage: "checkmark")
+                } else {
+                    Text("En el iPad")
+                }
+            }
+        } label: {
+            Image(systemName: client.hearsAudio ? "ipad.gen2" : "speaker.wave.2")
+                .frame(width: 44, height: 36)
+        }
+        .buttonStyle(.bordered)
+        .tint(client.hearsAudio ? .orange : nil)
+        .accessibilityLabel(client.hearsAudio ? "Sonido en el iPad" : "Sonido en el Mac")
+    }
+
+    @ViewBuilder
+    private func screenLabel(_ display: SharedDisplay) -> some View {
+        let title = "\(display.name) \(display.width)×\(display.height)"
+        if display.id == client.activeDisplay {
+            Label(title, systemImage: "checkmark")
+        } else {
+            Text(title)
         }
     }
 

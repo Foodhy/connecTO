@@ -56,6 +56,19 @@ struct SessionMachineTests {
         #expect(effect == .reply(.rejected(.notPaired)))
     }
 
+    @Test func screenChoiceBeforePairingIsRejected() {
+        var machine = makeMachine(digits: "482193")
+        let effect = machine.handle(.screen(7), now: now, newSessionID: { session })
+        #expect(effect == .reply(.rejected(.notPaired)))
+    }
+
+    @Test func screenAndAudioAfterPairingAreAccepted() {
+        var machine = makeMachine(digits: "482193")
+        _ = machine.handle(pair("482193"), now: now, newSessionID: { session })
+        #expect(machine.handle(.screen(7), now: now, newSessionID: { session }) == .input(.screen(7)))
+        #expect(machine.handle(.audio(true), now: now, newSessionID: { session }) == .input(.audio(true)))
+    }
+
     @Test func inputAfterPairingIsAccepted() {
         var machine = makeMachine(digits: "482193")
         _ = machine.handle(pair("482193"), now: now, newSessionID: { session })

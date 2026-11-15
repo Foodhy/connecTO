@@ -68,6 +68,9 @@ nonisolated enum WireMessage: Equatable, Sendable {
     case quality(longSide: Int)
     case videoHello(deviceID: UUID)
     case screenUnavailable
+    case displays(items: [SharedDisplay], active: UInt32)
+    case screen(UInt32)
+    case audio(Bool)
     case ping
     case pong
 }
@@ -92,6 +95,10 @@ nonisolated extension WireMessage: Codable {
         case x
         case y
         case longSide
+        case displays
+        case active
+        case displayID
+        case enabled
     }
 
     func encode(to encoder: Encoder) throws {
@@ -150,6 +157,16 @@ nonisolated extension WireMessage: Codable {
             try container.encode(deviceID.uuidString, forKey: .deviceID)
         case .screenUnavailable:
             try container.encode("screenUnavailable", forKey: .type)
+        case .displays(let items, let active):
+            try container.encode("displays", forKey: .type)
+            try container.encode(items, forKey: .displays)
+            try container.encode(active, forKey: .active)
+        case .screen(let displayID):
+            try container.encode("screen", forKey: .type)
+            try container.encode(displayID, forKey: .displayID)
+        case .audio(let enabled):
+            try container.encode("audio", forKey: .type)
+            try container.encode(enabled, forKey: .enabled)
         case .ping:
             try container.encode("ping", forKey: .type)
         case .pong:
@@ -215,6 +232,15 @@ nonisolated extension WireMessage: Codable {
             self = .videoHello(deviceID: try Self.uuid(from: container, forKey: .deviceID))
         case "screenUnavailable":
             self = .screenUnavailable
+        case "displays":
+            self = .displays(
+                items: try container.decode([SharedDisplay].self, forKey: .displays),
+                active: try container.decode(UInt32.self, forKey: .active)
+            )
+        case "screen":
+            self = .screen(try container.decode(UInt32.self, forKey: .displayID))
+        case "audio":
+            self = .audio(try container.decode(Bool.self, forKey: .enabled))
         case "ping":
             self = .ping
         case "pong":

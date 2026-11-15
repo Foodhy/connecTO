@@ -13,7 +13,7 @@ nonisolated enum ControlGuide {
             id: "picture",
             symbol: "display",
             title: "La pantalla",
-            detail: "Un dedo mueve el cursor sobre la imagen del Mac. Dos dedos desplazan. Un toque no hace clic hasta que enciendas Clic."
+            detail: "Un dedo mueve el cursor sobre la imagen del Mac. Dos dedos desplazan. Separa dos dedos para acercar y júntalos para alejar; muévelos a la vez para recorrer lo ampliado. En un Magic Mouse, desliza un dedo sobre la superficie para subir o bajar. Un toque no hace clic hasta que enciendas Clic."
         ),
         ControlLesson(
             id: "click",
@@ -64,10 +64,22 @@ nonisolated enum ControlGuide {
             detail: "Elige el lado largo de la imagen, en píxeles. Más píxeles se ven mejor y usan más red."
         ),
         ControlLesson(
+            id: "display",
+            symbol: "display",
+            title: "Pantalla",
+            detail: "Elige qué monitor del Mac se ve. El cursor cae en esa pantalla."
+        ),
+        ControlLesson(
+            id: "sound",
+            symbol: "speaker.wave.2",
+            title: "Sonido",
+            detail: "En el Mac el audio se queda ahí. En el iPad lo escuchas en este aparato y el Mac se silencia hasta que lo devuelves."
+        ),
+        ControlLesson(
             id: "media",
             symbol: "playpause",
             title: "Volumen y reproducción",
-            detail: "En la fila de abajo, de izquierda a derecha: bajar volumen, silencio, subir volumen, anterior, pausa y siguiente."
+            detail: "En la misma fila que el resto: bajar volumen, silencio, subir volumen, anterior, pausa y siguiente. Desliza la fila de lado si no caben."
         ),
         ControlLesson(
             id: "permissions",

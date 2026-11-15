@@ -6,7 +6,9 @@ struct VideoPacketTests {
     @Test func formatAndSampleRoundTrip() throws {
         let format = VideoPacket.format(parameterSets: [Data([0, 1, 2]), Data([9])], width: 1280, height: 720)
         let sample = VideoPacket.sample(isKeyframe: true, data: Data([4, 5, 6, 7]))
-        for packet in [format, sample] {
+        let audioFormat = VideoPacket.audioFormat(sampleRate: 48_000, channels: 2)
+        let audio = VideoPacket.audio(data: Data([1, 2, 3, 4]))
+        for packet in [format, sample, audioFormat, audio] {
             var decoder = VideoPacketDecoder()
             let decoded = try decoder.append(VideoPacketCodec.encode(packet))
             #expect(decoded == [packet])

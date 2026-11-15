@@ -20,6 +20,9 @@ final class SessionClient {
     private(set) var videoSize = CGSize.zero
     private(set) var screenAvailable = false
     private(set) var screenDenied = false
+    private(set) var displays: [SharedDisplay] = []
+    private(set) var activeDisplay: UInt32 = 0
+    private(set) var hearsAudio = false
 
     private var connection: NWConnection?
     private var endpoint: NWEndpoint?
@@ -39,6 +42,7 @@ final class SessionClient {
     private var pointerScheduled = false
     private var pendingScroll = (dx: 0.0, dy: 0.0)
     private var scrollScheduled = false
+    private let speaker = SystemAudioPlayer()
 
     func connect(to mac: DiscoveredMac) {
         tearDown()
@@ -48,6 +52,10 @@ final class SessionClient {
         screenDenied = false
         screenAvailable = false
         videoSize = .zero
+        displays = []
+        activeDisplay = 0
+        hearsAudio = false
+        speaker.stop()
         phase = .connecting
         notice = nil
         draftCode = ""
@@ -149,6 +157,19 @@ final class SessionClient {
         pendingVideo.removeAll()
     }
 
+    func selectDisplay(_ id: UInt32) {
+        guard displays.contains(where: { $0.id == id }), id != activeDisplay else { return }
+        activeDisplay = id
+        sendControl(.screen(id))
+    }
+
+    func setHearsOnPad(_ enabled: Bool) {
+        guard enabled != hearsAudio else { return }
+        hearsAudio = enabled
+        if !enabled { speaker.stop() }
+        sendControl(.audio(enabled))
+    }
+
     func sendTyped(_ text: String, modifiers: KeyModifiers) {
         switch KeyMapping.resolve(text, modifiers: modifiers) {
         case .key(let code, let modifiers):
@@ -240,6 +261,12 @@ final class SessionClient {
             screenDenied = true
             screenAvailable = false
             closeVideo()
+        case .displays(let items, let active):
+            displays = items
+            activeDisplay = active
+        case .audio(let enabled):
+            hearsAudio = enabled
+            if !enabled { speaker.stop() }
         case .rejected(let reason):
             draftCode = ""
             switch reason {
@@ -256,7 +283,7 @@ final class SessionClient {
             case .notPaired:
                 phase = .needsCode
             }
-        case .pong, .hello, .pair, .pointer, .button, .scroll, .key, .text, .media, .ping, .cursor, .quality, .videoHello:
+        case .pong, .hello, .pair, .pointer, .button, .scroll, .key, .text, .media, .ping, .cursor, .quality, .videoHello, .screen:
             break
         }
     }
@@ -340,11 +367,24 @@ final class SessionClient {
     }
 
     private func deliver(_ packet: VideoPacket) {
-        if case .format(_, let width, let height) = packet {
+        switch packet {
+        case .format(_, let width, let height):
             videoSize = CGSize(width: width, height: height)
             screenAvailable = true
             screenDenied = false
+            forward(packet)
+        case .sample:
+            forward(packet)
+        case .audioFormat(let sampleRate, let channels):
+            guard hearsAudio else { return }
+            speaker.prepare(sampleRate: sampleRate, channels: channels)
+        case .audio(let data):
+            guard hearsAudio else { return }
+            speaker.play(data)
         }
+    }
+
+    private func forward(_ packet: VideoPacket) {
         if let onVideoPacket {
             onVideoPacket(packet)
         } else if pendingVideo.count < 30 {
@@ -358,6 +398,7 @@ final class SessionClient {
         videoDecoder = VideoPacketDecoder()
         pendingVideo.removeAll()
         onVideoPacket = nil
+        speaker.stop()
         let connection = videoConnection
         videoConnection = nil
         connection?.cancel()
@@ -367,6 +408,9 @@ final class SessionClient {
         generation += 1
         receiving = false
         decoder = FrameDecoder()
+        displays = []
+        activeDisplay = 0
+        hearsAudio = false
         connection?.cancel()
         connection = nil
         closeVideo()

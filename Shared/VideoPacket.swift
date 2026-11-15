@@ -3,6 +3,8 @@ import Foundation
 nonisolated enum VideoPacket: Equatable, Sendable {
     case format(parameterSets: [Data], width: Int, height: Int)
     case sample(isKeyframe: Bool, data: Data)
+    case audioFormat(sampleRate: Int, channels: Int)
+    case audio(data: Data)
 }
 
 nonisolated enum VideoPacketError: Error, Equatable {
@@ -46,6 +48,15 @@ nonisolated enum VideoPacketCodec {
             guard payload.count >= 2 else { throw VideoPacketError.malformed }
             let isKeyframe = payload[payload.startIndex + 1] == 1
             return .sample(isKeyframe: isKeyframe, data: Data(payload.dropFirst(2)))
+        case 3:
+            guard payload.count == 7 else { throw VideoPacketError.malformed }
+            return .audioFormat(
+                sampleRate: readUInt32(payload, at: payload.startIndex + 1),
+                channels: readUInt16(payload, at: 5)
+            )
+        case 4:
+            guard payload.count >= 2 else { throw VideoPacketError.malformed }
+            return .audio(data: Data(payload.dropFirst(1)))
         default:
             throw VideoPacketError.malformed
         }
@@ -73,6 +84,21 @@ nonisolated enum VideoPacketCodec {
             var data = Data()
             data.append(2)
             data.append(isKeyframe ? 1 : 0)
+            data.append(sample)
+            return data
+        case .audioFormat(let sampleRate, let channels):
+            guard sampleRate >= 0, sampleRate <= Int(UInt32.max), channels >= 0, channels <= Int(UInt16.max) else {
+                throw VideoPacketError.malformed
+            }
+            var data = Data()
+            data.append(3)
+            appendUInt32(UInt32(sampleRate), to: &data)
+            appendUInt16(UInt16(channels), to: &data)
+            return data
+        case .audio(let sample):
+            guard !sample.isEmpty else { throw VideoPacketError.malformed }
+            var data = Data()
+            data.append(4)
             data.append(sample)
             return data
         }
