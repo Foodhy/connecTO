@@ -64,11 +64,15 @@ nonisolated enum WireMessage: Equatable, Sendable {
     case key(keyCode: UInt16, phase: ButtonPhase, modifiers: KeyModifiers)
     case text(String)
     case media(MediaAction)
+    case cursor(x: Double, y: Double)
+    case quality(longSide: Int)
+    case videoHello(deviceID: UUID)
+    case screenUnavailable
     case ping
     case pong
 }
 
-extension WireMessage: Codable {
+nonisolated extension WireMessage: Codable {
     private enum CodingKeys: String, CodingKey {
         case type
         case dx
@@ -85,6 +89,9 @@ extension WireMessage: Codable {
         case modifiers
         case text
         case action
+        case x
+        case y
+        case longSide
     }
 
     func encode(to encoder: Encoder) throws {
@@ -131,6 +138,18 @@ extension WireMessage: Codable {
         case .media(let action):
             try container.encode("media", forKey: .type)
             try container.encode(action, forKey: .action)
+        case .cursor(let x, let y):
+            try container.encode("cursor", forKey: .type)
+            try container.encode(x, forKey: .x)
+            try container.encode(y, forKey: .y)
+        case .quality(let longSide):
+            try container.encode("quality", forKey: .type)
+            try container.encode(longSide, forKey: .longSide)
+        case .videoHello(let deviceID):
+            try container.encode("videoHello", forKey: .type)
+            try container.encode(deviceID.uuidString, forKey: .deviceID)
+        case .screenUnavailable:
+            try container.encode("screenUnavailable", forKey: .type)
         case .ping:
             try container.encode("ping", forKey: .type)
         case .pong:
@@ -185,6 +204,17 @@ extension WireMessage: Codable {
             self = .text(try container.decode(String.self, forKey: .text))
         case "media":
             self = .media(try container.decode(MediaAction.self, forKey: .action))
+        case "cursor":
+            self = .cursor(
+                x: try container.decode(Double.self, forKey: .x),
+                y: try container.decode(Double.self, forKey: .y)
+            )
+        case "quality":
+            self = .quality(longSide: try container.decode(Int.self, forKey: .longSide))
+        case "videoHello":
+            self = .videoHello(deviceID: try Self.uuid(from: container, forKey: .deviceID))
+        case "screenUnavailable":
+            self = .screenUnavailable
         case "ping":
             self = .ping
         case "pong":

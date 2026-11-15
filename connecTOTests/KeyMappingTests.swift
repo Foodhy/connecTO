@@ -14,4 +14,12 @@ struct KeyMappingTests {
     @Test func aWordWithCommandStaysText() {
         #expect(KeyMapping.resolve("hola", modifiers: .command) == .text("hola"))
     }
+
+    @Test func iPadKeyBecomesTheMacKey() {
+        #expect(HardwareKeyCode.macKeyCode(hidUsage: 4) == 0)
+        #expect(HardwareKeyCode.macKeyCode(hidUsage: 22) == 1)
+        #expect(HardwareKeyCode.macKeyCode(hidUsage: 40) == 36)
+        #expect(HardwareKeyCode.macKeyCode(hidUsage: 80) == 123)
+        #expect(HardwareKeyCode.macKeyCode(hidUsage: 224) == nil)
+    }
 }

@@ -6,6 +6,7 @@ final class MacHost {
     private(set) var code: PairingCode
     private(set) var now = Date()
     private(set) var accessibilityTrusted = false
+    private(set) var screenRecordingAllowed = false
     private(set) var linkLabel = "Esperando un iPad"
     private(set) var isLinked = false
     private var server: SessionServer?
@@ -29,6 +30,7 @@ final class MacHost {
         maintainTask = Task { @MainActor in
             while !Task.isCancelled {
                 self.accessibilityTrusted = AccessibilityGate.isTrusted(prompt: false)
+                self.screenRecordingAllowed = ScreenRecordingGate.isAuthorized()
                 self.now = Date()
                 if self.now >= self.code.expiresAt {
                     self.regenerateCode()
@@ -51,6 +53,11 @@ final class MacHost {
     func openAccessibility() {
         _ = AccessibilityGate.isTrusted(prompt: true)
         AccessibilityGate.openSettings()
+    }
+
+    func openScreenRecording() {
+        _ = ScreenRecordingGate.requestAccess()
+        ScreenRecordingGate.openSettings()
     }
 
     func setLink(label: String, linked: Bool) {

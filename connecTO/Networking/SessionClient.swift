@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import Network
 import Observation
@@ -16,8 +17,18 @@ final class SessionClient {
     private(set) var macName = ""
     var draftCode = ""
     private(set) var notice: String?
+    private(set) var videoSize = CGSize.zero
+    private(set) var screenAvailable = false
+    private(set) var screenDenied = false
 
     private var connection: NWConnection?
+    private var endpoint: NWEndpoint?
+    private var videoConnection: NWConnection?
+    private var videoDecoder = VideoPacketDecoder()
+    private var videoGeneration = 0
+    private var videoReceiving = false
+    private var onVideoPacket: ((VideoPacket) -> Void)?
+    private var pendingVideo: [VideoPacket] = []
     private var decoder = FrameDecoder()
     private var identity = DeviceIdentity.load()
     private var generation = 0
@@ -32,7 +43,11 @@ final class SessionClient {
     func connect(to mac: DiscoveredMac) {
         tearDown()
         suppressAuto = false
+        endpoint = mac.endpoint
         macName = mac.name
+        screenDenied = false
+        screenAvailable = false
+        videoSize = .zero
         phase = .connecting
         notice = nil
         draftCode = ""
@@ -75,8 +90,9 @@ final class SessionClient {
         pendingPointer.dy += dy
         guard !pointerScheduled else { return }
         pointerScheduled = true
-        Task { @MainActor in
+        Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(16))
+            guard let self else { return }
             self.pointerScheduled = false
             let dx = self.pendingPointer.dx
             let dy = self.pendingPointer.dy
@@ -93,8 +109,9 @@ final class SessionClient {
         pendingScroll.dy += dy
         guard !scrollScheduled else { return }
         scrollScheduled = true
-        Task { @MainActor in
+        Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(16))
+            guard let self else { return }
             self.scrollScheduled = false
             let dx = self.pendingScroll.dx
             let dy = self.pendingScroll.dy
@@ -118,6 +135,18 @@ final class SessionClient {
     func sendKey(_ keyCode: UInt16, modifiers: KeyModifiers) {
         sendControl(.key(keyCode: keyCode, phase: .down, modifiers: modifiers))
         sendControl(.key(keyCode: keyCode, phase: .up, modifiers: modifiers))
+    }
+
+    func moveCursor(x: Double, y: Double) {
+        sendControl(.cursor(x: x, y: y))
+    }
+
+    func attachDisplay(_ handler: @escaping (VideoPacket) -> Void) {
+        onVideoPacket = handler
+        for packet in pendingVideo {
+            handler(packet)
+        }
+        pendingVideo.removeAll()
     }
 
     func sendTyped(_ text: String, modifiers: KeyModifiers) {
@@ -163,8 +192,9 @@ final class SessionClient {
         receiving = true
         connection.receive(minimumIncompleteLength: 1, maximumLength: 16_384) { [weak self] data, _, isComplete, error in
             let ended = isComplete || error != nil
+            let client = self
             Task { @MainActor in
-                self?.consume(data, ended: ended, generation: generation)
+                client?.consume(data, ended: ended, generation: generation)
             }
         }
     }
@@ -204,6 +234,12 @@ final class SessionClient {
             phase = .controlling
             notice = nil
             UserDefaults.standard.set(macName, forKey: Self.lastMacKey)
+            sendNow(.quality(longSide: Self.pictureLongSide))
+            openVideo()
+        case .screenUnavailable:
+            screenDenied = true
+            screenAvailable = false
+            closeVideo()
         case .rejected(let reason):
             draftCode = ""
             switch reason {
@@ -220,7 +256,7 @@ final class SessionClient {
             case .notPaired:
                 phase = .needsCode
             }
-        case .pong, .hello, .pair, .pointer, .button, .scroll, .key, .text, .media, .ping:
+        case .pong, .hello, .pair, .pointer, .button, .scroll, .key, .text, .media, .ping, .cursor, .quality, .videoHello:
             break
         }
     }
@@ -230,13 +266,118 @@ final class SessionClient {
         connection.send(content: data, completion: .contentProcessed { _ in })
     }
 
+    private func openVideo() {
+        guard let endpoint, videoConnection == nil else { return }
+        videoGeneration += 1
+        let generation = videoGeneration
+        let connection = NWConnection(to: endpoint, using: .tcp)
+        videoConnection = connection
+        videoDecoder = VideoPacketDecoder()
+        connection.stateUpdateHandler = { [weak self] state in
+            Task { @MainActor in
+                self?.handleVideo(state, generation: generation, connection: connection)
+            }
+        }
+        connection.start(queue: .main)
+    }
+
+    private func handleVideo(_ state: NWConnection.State, generation: Int, connection: NWConnection) {
+        guard generation == videoGeneration else { return }
+        switch state {
+        case .ready:
+            guard let data = try? FrameCodec.encode(.videoHello(deviceID: identity.id)) else { return }
+            connection.send(content: data, completion: .contentProcessed { _ in })
+            receiveVideo(generation: generation, connection: connection)
+        case .failed:
+            if !screenAvailable {
+                screenDenied = true
+            }
+            closeVideo()
+        case .cancelled, .waiting, .preparing, .setup:
+            break
+        @unknown default:
+            break
+        }
+    }
+
+    private func receiveVideo(generation: Int, connection: NWConnection) {
+        guard !videoReceiving else { return }
+        videoReceiving = true
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 262_144) { [weak self] data, _, isComplete, error in
+            let ended = isComplete || error != nil
+            let client = self
+            Task { @MainActor in
+                client?.consumeVideo(data, ended: ended, generation: generation, connection: connection)
+            }
+        }
+    }
+
+    private func consumeVideo(_ data: Data?, ended: Bool, generation: Int, connection: NWConnection) {
+        guard generation == videoGeneration else { return }
+        videoReceiving = false
+        if let data, !data.isEmpty {
+            do {
+                let packets = try videoDecoder.append(data)
+                for packet in packets {
+                    deliver(packet)
+                }
+            } catch {
+                if !screenAvailable {
+                    screenDenied = true
+                }
+                closeVideo()
+                return
+            }
+        }
+        if ended {
+            if !screenAvailable {
+                screenDenied = true
+            }
+            closeVideo()
+            return
+        }
+        receiveVideo(generation: generation, connection: connection)
+    }
+
+    private func deliver(_ packet: VideoPacket) {
+        if case .format(_, let width, let height) = packet {
+            videoSize = CGSize(width: width, height: height)
+            screenAvailable = true
+            screenDenied = false
+        }
+        if let onVideoPacket {
+            onVideoPacket(packet)
+        } else if pendingVideo.count < 30 {
+            pendingVideo.append(packet)
+        }
+    }
+
+    private func closeVideo() {
+        videoGeneration += 1
+        videoReceiving = false
+        videoDecoder = VideoPacketDecoder()
+        pendingVideo.removeAll()
+        onVideoPacket = nil
+        let connection = videoConnection
+        videoConnection = nil
+        connection?.cancel()
+    }
+
     private func tearDown() {
         generation += 1
         receiving = false
         decoder = FrameDecoder()
         connection?.cancel()
         connection = nil
+        closeVideo()
     }
 
     private static let lastMacKey = "connecTO.lastMacName"
+    static let longSideKey = "connecTO.longSide"
+
+    static var pictureLongSide: Int {
+        let stored = UserDefaults.standard.integer(forKey: longSideKey)
+        guard stored >= 960 else { return 1920 }
+        return min(stored, 3840)
+    }
 }

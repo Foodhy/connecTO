@@ -4,20 +4,15 @@ struct ControlView: View {
     var client: SessionClient
     var onDisconnect: () -> Void
     @State private var dragArmed = false
+    @State private var clickArmed = false
     @State private var keyboardVisible = false
+    @AppStorage(SessionClient.longSideKey) private var longSide = 1920
+    @State private var qualityTask: Task<Void, Never>?
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 12) {
-                TrackpadView(
-                    dragArmed: dragArmed,
-                    onMove: client.movePointer,
-                    onScroll: client.scroll,
-                    onLeftDown: { client.sendControl(.button(.left, .down)) },
-                    onLeftUp: { client.sendControl(.button(.left, .up)) },
-                    onLeftClick: { client.click(.left) },
-                    onRightClick: { client.click(.right) }
-                )
+                surface
                 actionRow
                 if keyboardVisible {
                     KeyboardBarView(client: client)
@@ -35,16 +30,112 @@ struct ControlView: View {
         }
     }
 
+    @ViewBuilder
+    private var surface: some View {
+        if client.screenDenied {
+            VStack(spacing: 8) {
+                Text("El Mac no está compartiendo la pantalla. Activa Grabación de pantalla en su menú y vuelve a conectar.")
+                    .font(.callout)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.secondary)
+                trackpad
+            }
+        } else {
+            ZStack {
+                DesktopView(client: client, dragArmed: dragArmed, clickArmed: clickArmed)
+                if !client.screenAvailable {
+                    ProgressView("Abriendo la pantalla…")
+                        .padding(12)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                }
+            }
+        }
+    }
+
+    private var trackpad: some View {
+        TrackpadView(
+            dragArmed: dragArmed,
+            clickArmed: clickArmed,
+            onMove: client.movePointer,
+            onScroll: client.scroll,
+            onLeftDown: { client.sendControl(.button(.left, .down)) },
+            onLeftUp: { client.sendControl(.button(.left, .up)) },
+            onLeftClick: { client.click(.left) },
+            onRightClick: { client.click(.right) }
+        )
+    }
+
     private var actionRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                Button("Clic") { client.click(.left) }
-                Button("Derecho") { client.click(.right) }
-                Button(dragArmed ? "Soltar" : "Arrastrar") { dragArmed.toggle() }
-                    .tint(dragArmed ? .orange : nil)
-                Button(keyboardVisible ? "Ocultar teclado" : "Teclado") { keyboardVisible.toggle() }
+                iconButton("cursorarrow.click", "Clic", tint: clickArmed ? .orange : nil) {
+                    clickArmed.toggle()
+                    if clickArmed { dragArmed = false }
+                }
+                iconButton("contextualmenu.and.cursorarrow", "Clic derecho") { client.click(.right) }
+                iconButton("hand.draw", "Arrastrar", tint: dragArmed ? .orange : nil) {
+                    dragArmed.toggle()
+                    if dragArmed { clickArmed = false }
+                }
+                iconButton(keyboardVisible ? "keyboard.chevron.compact.down" : "keyboard", "Teclado") {
+                    keyboardVisible.toggle()
+                }
+                spaceButton("chevron.left", SpecialKey.left, "Escritorio anterior")
+                spaceButton("chevron.up", SpecialKey.up, "Ver todas las ventanas")
+                spaceButton("chevron.right", SpecialKey.right, "Escritorio siguiente")
+                qualityMenu
             }
             .buttonStyle(.bordered)
         }
+    }
+
+    private var qualityMenu: some View {
+        Menu {
+            Text("Lado largo \(longSide) px")
+            Slider(
+                value: Binding(
+                    get: { Double(longSide) },
+                    set: { longSide = Int($0.rounded()) }
+                ),
+                in: 960...3840,
+                step: 80
+            )
+        } label: {
+            Image(systemName: "sparkles.tv")
+                .frame(width: 44, height: 36)
+        }
+        .accessibilityLabel("Nitidez \(longSide) px")
+        .onChange(of: longSide) { _, value in
+            qualityTask?.cancel()
+            qualityTask = Task {
+                try? await Task.sleep(for: .milliseconds(400))
+                guard !Task.isCancelled else { return }
+                client.sendControl(.quality(longSide: value))
+            }
+        }
+    }
+
+    private func spaceButton(_ systemName: String, _ key: UInt16, _ title: String) -> some View {
+        Button {
+            client.sendKey(key, modifiers: .control)
+        } label: {
+            Image(systemName: systemName)
+                .frame(width: 44, height: 36)
+        }
+        .accessibilityLabel(title)
+    }
+
+    private func iconButton(
+        _ systemName: String,
+        _ title: String,
+        tint: Color? = nil,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .frame(width: 44, height: 36)
+        }
+        .accessibilityLabel(title)
+        .tint(tint)
     }
 }

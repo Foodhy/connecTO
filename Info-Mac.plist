@@ -10,5 +10,7 @@
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>connecTO anuncia este Mac en la red local para que el iPad pueda controlarlo.</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>connecTO muestra la pantalla de este Mac en el iPad.</string>
 </dict>
 </plist>

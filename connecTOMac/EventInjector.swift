@@ -7,12 +7,15 @@ final class EventInjector {
     private var rightIsDown = false
     private var leftClickCount = 1
     private var lastLeftClick = Date.distantPast
+    private var lastPostedLocation: CGPoint?
 
-    func apply(_ message: WireMessage) {
+    func apply(_ message: WireMessage, displayFrame: CGRect = .zero) {
         guard AccessibilityGate.isTrusted(prompt: false) else { return }
         switch message {
         case .pointer(let dx, let dy):
             move(dx: dx, dy: dy)
+        case .cursor(let x, let y):
+            moveAbsolute(x: x, y: y, displayFrame: displayFrame)
         case .button(let button, let phase):
             setButton(button, phase: phase)
         case .scroll(let dx, let dy):
@@ -23,9 +26,15 @@ final class EventInjector {
             postText(text)
         case .media(let action):
             applyMedia(action)
-        case .hello, .pair, .paired, .needCode, .rejected, .ping, .pong:
+        case .hello, .pair, .paired, .needCode, .rejected, .ping, .pong, .videoHello, .screenUnavailable, .quality:
             break
         }
+    }
+
+    func moveAbsolute(x: Double, y: Double, displayFrame: CGRect) {
+        guard AccessibilityGate.isTrusted(prompt: false), displayFrame.width > 0, displayFrame.height > 0 else { return }
+        let location = ScreenMapping.globalPoint(normalizedX: x, normalizedY: y, displayFrame: displayFrame)
+        postMove(to: location, deltaX: 0, deltaY: 0)
     }
 
     private func move(dx: Double, dy: Double) {
@@ -33,6 +42,11 @@ final class EventInjector {
         var location = cursorLocation()
         location.x += scaled.dx
         location.y += scaled.dy
+        postMove(to: location, deltaX: Int64(scaled.dx.rounded()), deltaY: Int64(scaled.dy.rounded()))
+    }
+
+    private func postMove(to location: CGPoint, deltaX: Int64, deltaY: Int64) {
+        lastPostedLocation = location
         let type: CGEventType
         let button: CGMouseButton
         if leftIsDown {
@@ -51,13 +65,13 @@ final class EventInjector {
             mouseCursorPosition: location,
             mouseButton: button
         ) else { return }
-        event.setIntegerValueField(.mouseEventDeltaX, value: Int64(scaled.dx.rounded()))
-        event.setIntegerValueField(.mouseEventDeltaY, value: Int64(scaled.dy.rounded()))
+        event.setIntegerValueField(.mouseEventDeltaX, value: deltaX)
+        event.setIntegerValueField(.mouseEventDeltaY, value: deltaY)
         event.post(tap: .cghidEventTap)
     }
 
     private func setButton(_ button: MouseButton, phase: ButtonPhase) {
-        let location = cursorLocation()
+        let location = lastPostedLocation ?? cursorLocation()
         let type: CGEventType
         let cgButton: CGMouseButton
         switch (button, phase) {

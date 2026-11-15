@@ -24,6 +24,8 @@ struct WireMessageTests {
             .key(keyCode: 8, phase: .down, modifiers: .command),
             .text("áéí"),
             .rejected(.badCode),
+            .cursor(x: 0.25, y: 0.75),
+            .quality(longSide: 1920),
         ]
         for message in messages {
             var decoder = FrameDecoder()

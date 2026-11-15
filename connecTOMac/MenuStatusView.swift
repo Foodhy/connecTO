@@ -23,6 +23,15 @@ struct MenuStatusView: View {
                     .font(.callout)
                 Button("Abrir Ajustes de Accesibilidad", action: host.openAccessibility)
             }
+            if host.screenRecordingAllowed {
+                Text("Grabación de pantalla activa")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Falta Grabación de pantalla. Sin eso el iPad no ve el escritorio.")
+                    .font(.callout)
+                Button("Abrir Ajustes de Grabación", action: host.openScreenRecording)
+            }
             Button("Nuevo código", action: host.regenerateCode)
             Button("Olvidar iPads", action: host.forget)
             Divider()

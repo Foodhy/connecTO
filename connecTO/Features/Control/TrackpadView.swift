@@ -3,6 +3,7 @@ import UIKit
 
 struct TrackpadView: View {
     var dragArmed: Bool
+    var clickArmed: Bool
     var onMove: (Double, Double) -> Void
     var onScroll: (Double, Double) -> Void
     var onLeftDown: () -> Void
@@ -13,6 +14,7 @@ struct TrackpadView: View {
     var body: some View {
         TrackpadRepresentable(
             dragArmed: dragArmed,
+            clickArmed: clickArmed,
             onMove: onMove,
             onScroll: onScroll,
             onLeftDown: onLeftDown,
@@ -33,6 +35,7 @@ struct TrackpadView: View {
 
 private struct TrackpadRepresentable: UIViewRepresentable {
     var dragArmed: Bool
+    var clickArmed: Bool
     var onMove: (Double, Double) -> Void
     var onScroll: (Double, Double) -> Void
     var onLeftDown: () -> Void
@@ -46,6 +49,7 @@ private struct TrackpadRepresentable: UIViewRepresentable {
 
     func updateUIView(_ view: TrackpadCanvas, context: Context) {
         view.dragArmed = dragArmed
+        view.clickArmed = clickArmed
         view.onMove = onMove
         view.onScroll = onScroll
         view.onLeftDown = onLeftDown
@@ -57,6 +61,7 @@ private struct TrackpadRepresentable: UIViewRepresentable {
 
 final class TrackpadCanvas: UIView {
     var dragArmed = false
+    var clickArmed = false
     var onMove: (Double, Double) -> Void = { _, _ in }
     var onScroll: (Double, Double) -> Void = { _, _ in }
     var onLeftDown: () -> Void = {}
@@ -155,12 +160,8 @@ final class TrackpadCanvas: UIView {
         guard activeCount(event) == 0 else { return }
         if holdingDrag {
             releaseDrag()
-        } else if travel < 8 {
-            if usedTwoFingers {
-                onRightClick()
-            } else {
-                onLeftClick()
-            }
+        } else if travel < 8, clickArmed, !usedTwoFingers {
+            onLeftClick()
         }
         resetGesture()
     }

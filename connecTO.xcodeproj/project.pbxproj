@@ -198,8 +198,8 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				4DAABD0330A93C6400C4BFF1 /* connecTOMac */,
 				4DAABD0230A93C6400C4BFF1 /* Shared */,
+				4DAABD0330A93C6400C4BFF1 /* connecTOMac */,
 			);
 			name = connecTOMac;
 			packageProductDependencies = (

@@ -50,6 +50,12 @@ struct SessionMachineTests {
         #expect(effect == .reply(.rejected(.notPaired)))
     }
 
+    @Test func cursorBeforePairingIsRejected() {
+        var machine = makeMachine(digits: "482193")
+        let effect = machine.handle(.cursor(x: 0.2, y: 0.4), now: now, newSessionID: { session })
+        #expect(effect == .reply(.rejected(.notPaired)))
+    }
+
     @Test func inputAfterPairingIsAccepted() {
         var machine = makeMachine(digits: "482193")
         _ = machine.handle(pair("482193"), now: now, newSessionID: { session })
