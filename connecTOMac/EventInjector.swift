@@ -1,0 +1,195 @@
+import AppKit
+import CoreGraphics
+
+final class EventInjector {
+    private let source = CGEventSource(stateID: .combinedSessionState)
+    private var leftIsDown = false
+    private var rightIsDown = false
+    private var leftClickCount = 1
+    private var lastLeftClick = Date.distantPast
+
+    func apply(_ message: WireMessage) {
+        guard AccessibilityGate.isTrusted(prompt: false) else { return }
+        switch message {
+        case .pointer(let dx, let dy):
+            move(dx: dx, dy: dy)
+        case .button(let button, let phase):
+            setButton(button, phase: phase)
+        case .scroll(let dx, let dy):
+            scroll(dx: dx, dy: dy)
+        case .key(let keyCode, let phase, let modifiers):
+            postKey(code: keyCode, phase: phase, modifiers: modifiers)
+        case .text(let text):
+            postText(text)
+        case .media(let action):
+            applyMedia(action)
+        case .hello, .pair, .paired, .needCode, .rejected, .ping, .pong:
+            break
+        }
+    }
+
+    private func move(dx: Double, dy: Double) {
+        let scaled = PointerGain.cursorDelta(dx: dx, dy: dy)
+        var location = cursorLocation()
+        location.x += scaled.dx
+        location.y += scaled.dy
+        let type: CGEventType
+        let button: CGMouseButton
+        if leftIsDown {
+            type = .leftMouseDragged
+            button = .left
+        } else if rightIsDown {
+            type = .rightMouseDragged
+            button = .right
+        } else {
+            type = .mouseMoved
+            button = .left
+        }
+        guard let event = CGEvent(
+            mouseEventSource: source,
+            mouseType: type,
+            mouseCursorPosition: location,
+            mouseButton: button
+        ) else { return }
+        event.setIntegerValueField(.mouseEventDeltaX, value: Int64(scaled.dx.rounded()))
+        event.setIntegerValueField(.mouseEventDeltaY, value: Int64(scaled.dy.rounded()))
+        event.post(tap: .cghidEventTap)
+    }
+
+    private func setButton(_ button: MouseButton, phase: ButtonPhase) {
+        let location = cursorLocation()
+        let type: CGEventType
+        let cgButton: CGMouseButton
+        switch (button, phase) {
+        case (.left, .down):
+            type = .leftMouseDown
+            cgButton = .left
+            leftIsDown = true
+            noteLeftClick()
+        case (.left, .up):
+            type = .leftMouseUp
+            cgButton = .left
+            leftIsDown = false
+        case (.right, .down):
+            type = .rightMouseDown
+            cgButton = .right
+            rightIsDown = true
+        case (.right, .up):
+            type = .rightMouseUp
+            cgButton = .right
+            rightIsDown = false
+        }
+        guard let event = CGEvent(
+            mouseEventSource: source,
+            mouseType: type,
+            mouseCursorPosition: location,
+            mouseButton: cgButton
+        ) else { return }
+        if button == .left {
+            event.setIntegerValueField(.mouseEventClickState, value: Int64(leftClickCount))
+        }
+        event.post(tap: .cghidEventTap)
+    }
+
+    private func noteLeftClick() {
+        let now = Date()
+        if now.timeIntervalSince(lastLeftClick) < 0.35 {
+            leftClickCount += 1
+        } else {
+            leftClickCount = 1
+        }
+        lastLeftClick = now
+    }
+
+    /// Dedo hacia arriba (dy negativo en UIKit) produce un wheel positivo.
+    private func scroll(dx: Double, dy: Double) {
+        guard let event = CGEvent(
+            scrollWheelEvent2Source: source,
+            units: .pixel,
+            wheelCount: 2,
+            wheel1: clampWheel(-dy),
+            wheel2: clampWheel(-dx),
+            wheel3: 0
+        ) else { return }
+        event.post(tap: .cghidEventTap)
+    }
+
+    private func postKey(code: UInt16, phase: ButtonPhase, modifiers: KeyModifiers) {
+        guard let event = CGEvent(
+            keyboardEventSource: source,
+            virtualKey: CGKeyCode(code),
+            keyDown: phase == .down
+        ) else { return }
+        event.flags = flags(modifiers)
+        event.post(tap: .cghidEventTap)
+    }
+
+    private func postText(_ text: String) {
+        let characters = Array(text.utf16)
+        guard !characters.isEmpty else { return }
+        characters.withUnsafeBufferPointer { buffer in
+            guard let base = buffer.baseAddress else { return }
+            let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true)
+            down?.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: base)
+            down?.post(tap: .cghidEventTap)
+            let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false)
+            up?.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: base)
+            up?.post(tap: .cghidEventTap)
+        }
+    }
+
+    private func applyMedia(_ action: MediaAction) {
+        switch action {
+        case .volumeUp:
+            VolumeController.change(by: 0.0625)
+        case .volumeDown:
+            VolumeController.change(by: -0.0625)
+        case .mute:
+            VolumeController.toggleMute()
+        case .playPause:
+            postSystemKey(16)
+        case .next:
+            postSystemKey(17)
+        case .previous:
+            postSystemKey(18)
+        }
+    }
+
+    private func postSystemKey(_ key: Int32) {
+        postSystemKey(key, pressed: true)
+        postSystemKey(key, pressed: false)
+    }
+
+    private func postSystemKey(_ key: Int32, pressed: Bool) {
+        let flags = NSEvent.ModifierFlags(rawValue: pressed ? 0xa00 : 0xb00)
+        let data1 = Int((key << 16) | ((pressed ? 0xa : 0xb) << 8))
+        NSEvent.otherEvent(
+            with: .systemDefined,
+            location: .zero,
+            modifierFlags: flags,
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            subtype: 8,
+            data1: data1,
+            data2: -1
+        )?.cgEvent?.post(tap: .cghidEventTap)
+    }
+
+    private func flags(_ modifiers: KeyModifiers) -> CGEventFlags {
+        var flags = CGEventFlags()
+        if modifiers.contains(.command) { flags.insert(.maskCommand) }
+        if modifiers.contains(.option) { flags.insert(.maskAlternate) }
+        if modifiers.contains(.shift) { flags.insert(.maskShift) }
+        if modifiers.contains(.control) { flags.insert(.maskControl) }
+        return flags
+    }
+
+    private func cursorLocation() -> CGPoint {
+        CGEvent(source: source)?.location ?? .zero
+    }
+
+    private func clampWheel(_ value: Double) -> Int32 {
+        Int32(max(-2_000, min(2_000, value.rounded())))
+    }
+}
