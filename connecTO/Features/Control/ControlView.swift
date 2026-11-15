@@ -6,6 +6,7 @@ struct ControlView: View {
     @State private var dragArmed = false
     @State private var clickArmed = false
     @State private var keyboardVisible = false
+    @State private var windowsOpen = false
     @State private var confirmDisconnect = false
     @AppStorage(SessionClient.longSideKey) private var longSide = 1920
     @State private var qualityTask: Task<Void, Never>?
@@ -18,7 +19,6 @@ struct ControlView: View {
                     KeyboardBarView(client: client)
                 }
                 actionRow
-                disconnectButton
             }
             .padding(16)
             .navigationTitle(client.macName)
@@ -30,13 +30,6 @@ struct ControlView: View {
                 Text("Se cierra la sesión con \(client.macName).")
             }
         }
-    }
-
-    private var disconnectButton: some View {
-        Button("Desconectar") { confirmDisconnect = true }
-            .buttonStyle(.borderedProminent)
-            .tint(.red)
-            .frame(maxWidth: .infinity)
     }
 
     @ViewBuilder
@@ -77,25 +70,40 @@ struct ControlView: View {
     private var actionRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                iconButton("cursorarrow.click", "Clic", tint: clickArmed ? .orange : nil) {
+                ControlTile("cursorarrow.click", "Clic", tint: clickArmed ? .orange : nil) {
                     clickArmed.toggle()
                     if clickArmed { dragArmed = false }
                 }
-                iconButton("contextualmenu.and.cursorarrow", "Clic derecho") { client.click(.right) }
-                iconButton("hand.draw", "Arrastrar", tint: dragArmed ? .orange : nil) {
+                ControlTile("contextualmenu.and.cursorarrow", "Derecho", accessibility: "Clic derecho") {
+                    client.click(.right)
+                }
+                ControlTile("hand.draw", "Arrastrar", tint: dragArmed ? .orange : nil) {
                     dragArmed.toggle()
                     if dragArmed { clickArmed = false }
                 }
-                iconButton(keyboardVisible ? "keyboard.chevron.compact.down" : "keyboard", "Teclado") {
+                ControlTile(keyboardVisible ? "keyboard.chevron.compact.down" : "keyboard", "Teclado") {
                     keyboardVisible.toggle()
                 }
-                spaceButton("chevron.left", SpecialKey.left, "Anterior", "Escritorio anterior")
-                spaceButton("chevron.up", SpecialKey.up, "Ventanas", "Ver todas las ventanas")
-                spaceButton("chevron.right", SpecialKey.right, "Siguiente", "Escritorio siguiente")
+                ControlTile("chevron.left", "Anterior", accessibility: "Escritorio anterior") {
+                    sendSpace(SpecialKey.left)
+                }
+                ControlTile(
+                    windowsOpen ? "chevron.down" : "chevron.up",
+                    "Ventanas",
+                    accessibility: windowsOpen ? "Ventanas de esta app" : "Ver todas las ventanas"
+                ) {
+                    sendWindows()
+                }
+                ControlTile("chevron.right", "Siguiente", accessibility: "Escritorio siguiente") {
+                    sendSpace(SpecialKey.right)
+                }
                 displayMenu
                 soundMenu
                 MediaBarView(client: client)
                 qualityMenu
+                ControlTile("power", "Desconectar", tint: .red, prominent: true) {
+                    confirmDisconnect = true
+                }
             }
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -115,8 +123,7 @@ struct ControlView: View {
                 }
             }
         } label: {
-            Image(systemName: "display")
-                .frame(width: 44, height: 36)
+            ControlTileLabel(systemName: "display")
         }
         .buttonStyle(.bordered)
         .accessibilityLabel("Pantalla")
@@ -143,8 +150,7 @@ struct ControlView: View {
                 }
             }
         } label: {
-            Image(systemName: client.hearsAudio ? "ipad.gen2" : "speaker.wave.2")
-                .frame(width: 44, height: 36)
+            ControlTileLabel(systemName: client.hearsAudio ? "ipad.gen2" : "speaker.wave.2")
         }
         .buttonStyle(.bordered)
         .tint(client.hearsAudio ? .orange : nil)
@@ -173,8 +179,7 @@ struct ControlView: View {
                 step: 80
             )
         } label: {
-            Image(systemName: "sparkles.tv")
-                .frame(width: 44, height: 36)
+            ControlTileLabel(systemName: "sparkles.tv")
         }
         .buttonStyle(.bordered)
         .accessibilityLabel("Nitidez \(longSide) px")
@@ -188,42 +193,13 @@ struct ControlView: View {
         }
     }
 
-    private func spaceButton(_ systemName: String, _ key: UInt16, _ caption: String, _ title: String) -> some View {
-        Button {
-            client.sendControl(.key(keyCode: key, phase: .down, modifiers: .control))
-            Task {
-                try? await Task.sleep(for: .milliseconds(40))
-                client.sendControl(.key(keyCode: key, phase: .up, modifiers: .control))
-            }
-        } label: {
-            VStack(spacing: 2) {
-                Image(systemName: systemName)
-                Text(caption)
-                    .font(.caption2)
-            }
-            .frame(minWidth: 44)
-        }
-        .buttonStyle(.bordered)
-        .accessibilityLabel(title)
+    private func sendSpace(_ key: UInt16) {
+        client.sendControl(.key(keyCode: key, phase: .down, modifiers: .control))
     }
 
-    @ViewBuilder
-    private func iconButton(
-        _ systemName: String,
-        _ title: String,
-        tint: Color? = nil,
-        action: @escaping () -> Void
-    ) -> some View {
-        let button = Button(action: action) {
-            Image(systemName: systemName)
-                .frame(width: 44, height: 36)
-        }
-        .buttonStyle(.bordered)
-        .accessibilityLabel(title)
-        if let tint {
-            button.tint(tint)
-        } else {
-            button
-        }
+    private func sendWindows() {
+        let key = SpaceChord.windowsArrow(alreadyOpen: windowsOpen)
+        windowsOpen.toggle()
+        sendSpace(key)
     }
 }

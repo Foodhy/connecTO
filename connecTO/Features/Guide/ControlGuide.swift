@@ -43,19 +43,19 @@ nonisolated enum ControlGuide {
             id: "previousSpace",
             symbol: "chevron.left",
             title: "Anterior",
-            detail: "Cambia al escritorio de la izquierda."
+            detail: "Cambia al escritorio de la izquierda. Va con Control, así que un video no salta hacia atrás."
         ),
         ControlLesson(
             id: "windows",
             symbol: "chevron.up",
             title: "Ventanas",
-            detail: "Muestra todas las ventanas. Si Anterior, Ventanas o Siguiente no hacen nada, activa los atajos de Mission Control en el Mac."
+            detail: "La primera vez es Control y flecha arriba: todos los escritorios y ventanas. Otra vez es Control y flecha abajo: las ventanas de la app. Si no cambia nada, activa los atajos de Mission Control en el Mac."
         ),
         ControlLesson(
             id: "nextSpace",
             symbol: "chevron.right",
             title: "Siguiente",
-            detail: "Cambia al escritorio de la derecha."
+            detail: "Cambia al escritorio de la derecha. Va con Control, así que un video no salta hacia adelante."
         ),
         ControlLesson(
             id: "quality",
@@ -79,7 +79,7 @@ nonisolated enum ControlGuide {
             id: "media",
             symbol: "playpause",
             title: "Volumen y reproducción",
-            detail: "En la misma fila que el resto: bajar volumen, silencio, subir volumen, anterior, pausa y siguiente. Desliza la fila de lado si no caben."
+            detail: "En la misma fila, solo el icono: bajar volumen, silencio, subir volumen, pista anterior, pausa y pista siguiente. Desconectar es el último, en rojo. Desliza la fila si no caben."
         ),
         ControlLesson(
             id: "permissions",

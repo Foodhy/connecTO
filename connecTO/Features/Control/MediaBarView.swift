@@ -5,21 +5,24 @@ struct MediaBarView: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            symbol("speaker.minus", "Bajar volumen") { client.sendControl(.media(.volumeDown)) }
-            symbol("speaker.slash", "Silencio") { client.sendControl(.media(.mute)) }
-            symbol("speaker.plus", "Subir volumen") { client.sendControl(.media(.volumeUp)) }
-            symbol("backward.end", "Anterior") { client.sendControl(.media(.previous)) }
-            symbol("playpause", "Reproducir o pausar") { client.sendControl(.media(.playPause)) }
-            symbol("forward.end", "Siguiente") { client.sendControl(.media(.next)) }
+            ControlTile("speaker.minus", "Bajar", accessibility: "Bajar volumen") {
+                client.sendControl(.media(.volumeDown))
+            }
+            ControlTile("speaker.slash", "Silencio") {
+                client.sendControl(.media(.mute))
+            }
+            ControlTile("speaker.plus", "Subir", accessibility: "Subir volumen") {
+                client.sendControl(.media(.volumeUp))
+            }
+            ControlTile("backward.end", "Previa", accessibility: "Pista anterior") {
+                client.sendControl(.media(.previous))
+            }
+            ControlTile("playpause", "Pausa", accessibility: "Reproducir o pausar") {
+                client.sendControl(.media(.playPause))
+            }
+            ControlTile("forward.end", "Próxima", accessibility: "Pista siguiente") {
+                client.sendControl(.media(.next))
+            }
         }
-        .buttonStyle(.bordered)
-        .labelStyle(.iconOnly)
-    }
-
-    private func symbol(_ name: String, _ title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Label(title, systemImage: name)
-        }
-        .accessibilityLabel(title)
     }
 }

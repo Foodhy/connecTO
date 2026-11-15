@@ -76,7 +76,7 @@ The next time, open both apps. A trusted iPad reconnects to the last Mac on its 
 | Local Network | System Settings → Privacy & Security → Local Network, on the Mac and on the iPad |
 | Picture size | iPad, while connected → sparkles icon. Long side from 960 to 3840 px, default 1920. More pixels look sharper and use more of the network. |
 | How the controls work | iPad → **?** in the top corner (**Cómo se usa**) |
-| Switch desktop or show all windows | System Settings → Keyboard → Keyboard Shortcuts → Mission Control. The iPad sends Control–Left, Control–Right, and Control–Up. If those shortcuts are off, **Anterior**, **Ventanas**, and **Siguiente** do nothing. |
+| Switch desktop or show all windows | System Settings → Keyboard → Keyboard Shortcuts → Mission Control. The iPad sends Control–Left, Control–Right, and Control–Up. **Ventanas** a second time sends Control–Down. If those shortcuts are off, **Anterior**, **Ventanas**, and **Siguiente** do nothing. |
 
 ## On the iPad, once you are in
 
@@ -88,10 +88,10 @@ The picture is the Mac’s screen.
 - **Clic derecho** right-clicks where the pointer already is.
 - **Arrastrar** (orange) holds the button down while your finger is on the picture. **Clic** and **Arrastrar** are never both on.
 - **Teclado** opens a bar with ⌘ ⌥ ⇧ ⌃, esc, tab, delete, return, and the arrows. Text you type is sent to the Mac.
-- **Anterior**, **Ventanas**, and **Siguiente** are the Mission Control shortcuts above.
+- **Anterior** and **Siguiente** move one desktop left or right. They send Control with the arrow, so a video does not seek. **Ventanas** opens Mission Control (Control–Up); tap it again for the current app’s windows (Control–Down).
 - The display button chooses which monitor is shown. The pointer lands on that screen.
 - **Sonido** plays on the Mac, or on the iPad. While it plays on the iPad, the Mac output is muted and comes back when you choose **En el Mac**.
-- Volume, mute, and playback sit in the same row as the other controls. Scroll that row sideways if they do not fit.
-- **Desconectar**, the red button at the bottom, asks before it returns to the Mac list.
+- Volume, mute, and playback sit in the same row as the other controls. Every control is the same size and shows only its icon. Scroll that row sideways if they do not fit.
+- **Desconectar** is the last control in that row. The icon and its background are red. It asks before it returns to the Mac list.
 
 If the Mac is not sharing the screen, the iPad says so and falls back to a trackpad until Screen Recording is on.
