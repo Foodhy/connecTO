@@ -3,6 +3,7 @@ import SwiftUI
 struct DiscoverView: View {
     var browser: MacBrowser
     var onSelect: (DiscoveredMac) -> Void
+    @State private var showsGuide = false
 
     var body: some View {
         NavigationStack {
@@ -31,6 +32,18 @@ struct DiscoverView: View {
                 }
             }
             .navigationTitle("connecTO")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showsGuide = true
+                    } label: {
+                        Label("Cómo se usa", systemImage: "questionmark.circle")
+                    }
+                }
+            }
+            .sheet(isPresented: $showsGuide) {
+                GuideView()
+            }
         }
     }
 }

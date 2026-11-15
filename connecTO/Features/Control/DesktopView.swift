@@ -21,14 +21,13 @@ private struct DesktopRepresentable: UIViewRepresentable {
     var dragArmed: Bool
     var clickArmed: Bool
 
-    func makeUIView(context: Context) -> DesktopCanvas {
-        DesktopCanvas()
+    func makeCoordinator() -> Coordinator {
+        Coordinator(client: client)
     }
 
-    func updateUIView(_ view: DesktopCanvas, context: Context) {
-        view.videoSize = client.videoSize
-        view.dragArmed = dragArmed
-        view.clickArmed = clickArmed
+    func makeUIView(context: Context) -> DesktopCanvas {
+        let view = DesktopCanvas()
+        let client = context.coordinator.client
         view.onCursor = { client.moveCursor(x: $0, y: $1) }
         view.onLeftDown = { client.sendControl(.button(.left, .down)) }
         view.onLeftUp = { client.sendControl(.button(.left, .up)) }
@@ -37,6 +36,21 @@ private struct DesktopRepresentable: UIViewRepresentable {
         view.onKey = { client.sendControl(.key(keyCode: $0, phase: $1, modifiers: $2)) }
         client.attachDisplay { [weak view] packet in
             view?.player.enqueue(packet)
+        }
+        return view
+    }
+
+    func updateUIView(_ view: DesktopCanvas, context: Context) {
+        view.videoSize = client.videoSize
+        view.dragArmed = dragArmed
+        view.clickArmed = clickArmed
+    }
+
+    final class Coordinator {
+        let client: SessionClient
+
+        init(client: SessionClient) {
+            self.client = client
         }
     }
 }

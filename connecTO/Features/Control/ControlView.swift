@@ -80,12 +80,11 @@ struct ControlView: View {
                 iconButton(keyboardVisible ? "keyboard.chevron.compact.down" : "keyboard", "Teclado") {
                     keyboardVisible.toggle()
                 }
-                spaceButton("chevron.left", SpecialKey.left, "Escritorio anterior")
-                spaceButton("chevron.up", SpecialKey.up, "Ver todas las ventanas")
-                spaceButton("chevron.right", SpecialKey.right, "Escritorio siguiente")
+                spaceButton("chevron.left", SpecialKey.left, "Anterior", "Escritorio anterior")
+                spaceButton("chevron.up", SpecialKey.up, "Ventanas", "Ver todas las ventanas")
+                spaceButton("chevron.right", SpecialKey.right, "Siguiente", "Escritorio siguiente")
                 qualityMenu
             }
-            .buttonStyle(.bordered)
         }
     }
 
@@ -104,6 +103,7 @@ struct ControlView: View {
             Image(systemName: "sparkles.tv")
                 .frame(width: 44, height: 36)
         }
+        .buttonStyle(.bordered)
         .accessibilityLabel("Nitidez \(longSide) px")
         .onChange(of: longSide) { _, value in
             qualityTask?.cancel()
@@ -115,27 +115,42 @@ struct ControlView: View {
         }
     }
 
-    private func spaceButton(_ systemName: String, _ key: UInt16, _ title: String) -> some View {
+    private func spaceButton(_ systemName: String, _ key: UInt16, _ caption: String, _ title: String) -> some View {
         Button {
-            client.sendKey(key, modifiers: .control)
+            client.sendControl(.key(keyCode: key, phase: .down, modifiers: .control))
+            Task {
+                try? await Task.sleep(for: .milliseconds(40))
+                client.sendControl(.key(keyCode: key, phase: .up, modifiers: .control))
+            }
         } label: {
-            Image(systemName: systemName)
-                .frame(width: 44, height: 36)
+            VStack(spacing: 2) {
+                Image(systemName: systemName)
+                Text(caption)
+                    .font(.caption2)
+            }
+            .frame(minWidth: 44)
         }
+        .buttonStyle(.bordered)
         .accessibilityLabel(title)
     }
 
+    @ViewBuilder
     private func iconButton(
         _ systemName: String,
         _ title: String,
         tint: Color? = nil,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
+        let button = Button(action: action) {
             Image(systemName: systemName)
                 .frame(width: 44, height: 36)
         }
+        .buttonStyle(.bordered)
         .accessibilityLabel(title)
-        .tint(tint)
+        if let tint {
+            button.tint(tint)
+        } else {
+            button
+        }
     }
 }

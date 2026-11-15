@@ -3,6 +3,8 @@ import CoreGraphics
 
 final class EventInjector {
     private let source = CGEventSource(stateID: .combinedSessionState)
+    /// Mission Control ignora teclas que no parecen de un teclado real.
+    private let keyboardSource = CGEventSource(stateID: .hidSystemState)
     private var leftIsDown = false
     private var rightIsDown = false
     private var leftClickCount = 1
@@ -72,6 +74,17 @@ final class EventInjector {
 
     private func setButton(_ button: MouseButton, phase: ButtonPhase) {
         let location = lastPostedLocation ?? cursorLocation()
+        if phase == .up {
+            // Soltar en el mismo turno reentra en AppKit y tumba la sesión.
+            Task { @MainActor [weak self] in
+                self?.postButton(button, phase: .up, at: location)
+            }
+            return
+        }
+        postButton(button, phase: .down, at: location)
+    }
+
+    private func postButton(_ button: MouseButton, phase: ButtonPhase, at location: CGPoint) {
         let type: CGEventType
         let cgButton: CGMouseButton
         switch (button, phase) {
@@ -130,7 +143,7 @@ final class EventInjector {
 
     private func postKey(code: UInt16, phase: ButtonPhase, modifiers: KeyModifiers) {
         guard let event = CGEvent(
-            keyboardEventSource: source,
+            keyboardEventSource: keyboardSource,
             virtualKey: CGKeyCode(code),
             keyDown: phase == .down
         ) else { return }
