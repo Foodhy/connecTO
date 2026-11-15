@@ -5,22 +5,16 @@ final class EventInjector {
     private let source = CGEventSource(stateID: .combinedSessionState)
     /// Mission Control ignora teclas que no parecen de un teclado real.
     private let keyboardSource = CGEventSource(stateID: .hidSystemState)
-    /// Control+flecha solo cambia de escritorio si sale de una fuente privada,
-    /// Control se pulsa de verdad y la flecha lleva la bandera. Sin la bandera,
-    /// la app de delante (YouTube) recibe la flecha sola.
-    private let missionSource: CGEventSource? = {
-        let source = CGEventSource(stateID: .privateState)
-        source?.localEventsSuppressionInterval = 0
-        return source
-    }()
     private let chordQueue = DispatchQueue(label: "connecto.space-chord")
     private var leftIsDown = false
     private var rightIsDown = false
     private var leftClickCount = 1
     private var lastLeftClick = Date.distantPast
     private var lastPostedLocation: CGPoint?
+    private var capturedFrame = CGRect.zero
 
     func apply(_ message: WireMessage, displayFrame: CGRect = .zero) {
+        capturedFrame = displayFrame
         guard AccessibilityGate.isTrusted(prompt: false) else { return }
         switch message {
         case .pointer(let dx, let dy):
@@ -166,45 +160,13 @@ final class EventInjector {
         event.post(tap: .cghidEventTap)
     }
 
-    /// Anterior, Ventanas y Siguiente. La flecha espera a que Control esté abajo
-    /// y sale marcada, para que no adelante un video ni se quede en flecha arriba.
+    /// Anterior, Ventanas y Siguiente. No se manda la flecha: en este macOS la
+    /// recibe la app de delante y el escritorio no se mueve.
     private func postSpaceChord(_ arrow: UInt16) {
-        let steps = SpaceChord.steps(arrow: arrow)
-        chordQueue.async { [missionSource] in
-            var controlIsDown = false
-            defer {
-                if controlIsDown {
-                    Self.postChordStep(
-                        SpaceChord.Step(keyCode: SpaceChord.controlKey, down: false, control: false),
-                        source: missionSource
-                    )
-                }
-            }
-            for step in steps {
-                guard Self.postChordStep(step, source: missionSource) else { return }
-                if step.keyCode == SpaceChord.controlKey {
-                    controlIsDown = step.down
-                }
-                if step.down {
-                    Thread.sleep(forTimeInterval: step.keyCode == SpaceChord.controlKey ? 0.03 : 0.05)
-                } else if step.keyCode != SpaceChord.controlKey {
-                    Thread.sleep(forTimeInterval: 0.02)
-                }
-            }
+        let frame = capturedFrame
+        chordQueue.async {
+            DesktopMotion.perform(arrow: arrow, frame: frame)
         }
-    }
-
-    @discardableResult
-    private static func postChordStep(_ step: SpaceChord.Step, source: CGEventSource?) -> Bool {
-        guard let event = CGEvent(
-            keyboardEventSource: source,
-            virtualKey: CGKeyCode(step.keyCode),
-            keyDown: step.down
-        ) else { return false }
-        event.flags = step.control ? .maskControl : []
-        event.setIntegerValueField(.keyboardEventAutorepeat, value: 0)
-        event.post(tap: .cgSessionEventTap)
-        return true
     }
 
     private func postText(_ text: String) {
