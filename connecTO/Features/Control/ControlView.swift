@@ -12,6 +12,24 @@ struct ControlView: View {
     @State private var qualityTask: Task<Void, Never>?
 
     var body: some View {
+        Group {
+            if client.linkMode == .extend {
+                monitor
+            } else {
+                remote
+            }
+        }
+        .onChange(of: longSide) { _, value in
+            qualityTask?.cancel()
+            qualityTask = Task {
+                try? await Task.sleep(for: .milliseconds(400))
+                guard !Task.isCancelled else { return }
+                client.sendControl(.quality(longSide: value))
+            }
+        }
+    }
+
+    private var remote: some View {
         NavigationStack {
             VStack(spacing: 12) {
                 surface
@@ -32,6 +50,44 @@ struct ControlView: View {
         }
     }
 
+    private var monitor: some View {
+        ZStack(alignment: .bottomTrailing) {
+            surface
+            disconnectHover
+        }
+        .background(Color.black)
+        .statusBarHidden(true)
+        .persistentSystemOverlays(.hidden)
+    }
+
+    private var disconnectHover: some View {
+        HStack(spacing: 8) {
+            resolutionMenu
+            if confirmDisconnect {
+                HStack(spacing: 12) {
+                    Text("¿Terminar la sesión?")
+                        .font(.callout)
+                    Button("Terminar", role: .destructive, action: onDisconnect)
+                    Button("Cancelar") { confirmDisconnect = false }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(.ultraThinMaterial, in: Capsule())
+            }
+            Button {
+                confirmDisconnect.toggle()
+            } label: {
+                Image(systemName: "power")
+                    .font(.body.weight(.semibold))
+                    .frame(width: 36, height: 36)
+            }
+            .buttonStyle(.bordered)
+            .tint(.red)
+            .accessibilityLabel("Desconectar")
+        }
+        .padding(12)
+    }
+
     @ViewBuilder
     private var surface: some View {
         if client.screenDenied {
@@ -44,7 +100,12 @@ struct ControlView: View {
             }
         } else {
             ZStack {
-                DesktopView(client: client, dragArmed: dragArmed, clickArmed: clickArmed)
+                DesktopView(
+                    client: client,
+                    dragArmed: dragArmed,
+                    clickArmed: clickArmed,
+                    fillsScreen: client.linkMode == .extend
+                )
                 if !client.screenAvailable {
                     ProgressView("Abriendo la pantalla…")
                         .padding(12)
@@ -111,7 +172,9 @@ struct ControlView: View {
 
     private var displayMenu: some View {
         Menu {
-            if client.displays.isEmpty {
+            if client.linkMode == .extend {
+                Text("Monitor")
+            } else if client.displays.isEmpty {
                 Text("Buscando pantallas…")
             } else {
                 ForEach(client.displays, id: \.id) { display in
@@ -167,30 +230,35 @@ struct ControlView: View {
         }
     }
 
+    private var resolutionBinding: Binding<Double> {
+        Binding(
+            get: { Double(longSide) },
+            set: { longSide = Int($0.rounded()) }
+        )
+    }
+
+    private var resolutionMenu: some View {
+        Menu {
+            Text("Resolución \(longSide) px")
+            Slider(value: resolutionBinding, in: 960...3840, step: 80)
+        } label: {
+            Text("\(longSide)")
+                .font(.callout.monospacedDigit())
+                .frame(minWidth: 52, minHeight: 36)
+        }
+        .buttonStyle(.bordered)
+        .accessibilityLabel("Resolución \(longSide) px")
+    }
+
     private var qualityMenu: some View {
         Menu {
             Text("Lado largo \(longSide) px")
-            Slider(
-                value: Binding(
-                    get: { Double(longSide) },
-                    set: { longSide = Int($0.rounded()) }
-                ),
-                in: 960...3840,
-                step: 80
-            )
+            Slider(value: resolutionBinding, in: 960...3840, step: 80)
         } label: {
             ControlTileLabel(systemName: "sparkles.tv")
         }
         .buttonStyle(.bordered)
         .accessibilityLabel("Nitidez \(longSide) px")
-        .onChange(of: longSide) { _, value in
-            qualityTask?.cancel()
-            qualityTask = Task {
-                try? await Task.sleep(for: .milliseconds(400))
-                guard !Task.isCancelled else { return }
-                client.sendControl(.quality(longSide: value))
-            }
-        }
     }
 
     private func sendSpace(_ key: UInt16) {

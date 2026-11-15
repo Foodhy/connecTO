@@ -2,8 +2,10 @@ import SwiftUI
 
 struct DiscoverView: View {
     var browser: MacBrowser
-    var onSelect: (DiscoveredMac) -> Void
+    var onSelect: (DiscoveredMac, LinkMode) -> Void
     @State private var showsGuide = false
+    @State private var pendingMac: DiscoveredMac?
+    @State private var showsChoice = false
 
     var body: some View {
         NavigationStack {
@@ -17,7 +19,8 @@ struct DiscoverView: View {
                 } else {
                     List(browser.macs) { mac in
                         Button {
-                            onSelect(mac)
+                            pendingMac = mac
+                            showsChoice = true
                         } label: {
                             HStack(spacing: 12) {
                                 Image(systemName: "laptopcomputer")
@@ -44,10 +47,26 @@ struct DiscoverView: View {
             .sheet(isPresented: $showsGuide) {
                 GuideView()
             }
+            .confirmationDialog(
+                pendingMac?.name ?? "connecTO",
+                isPresented: $showsChoice,
+                titleVisibility: .visible,
+                presenting: pendingMac
+            ) { mac in
+                Button("Controlar el Mac") {
+                    onSelect(mac, .control)
+                }
+                Button("Monitor externo") {
+                    onSelect(mac, .extend)
+                }
+                Button("Cancelar", role: .cancel) {}
+            } message: { _ in
+                Text("Controlar muestra una pantalla que el Mac ya tiene. Monitor externo añade una pantalla más.")
+            }
         }
     }
 }
 
 #Preview {
-    DiscoverView(browser: MacBrowser(), onSelect: { _ in })
+    DiscoverView(browser: MacBrowser(), onSelect: { _, _ in })
 }

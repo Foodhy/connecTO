@@ -25,7 +25,13 @@ nonisolated final class ScreenCapturer: NSObject, SCStreamOutput, SCStreamDelega
     private let audioQueue = DispatchQueue(label: "connecTO.audio")
     private let audioTap = AudioTap()
 
-    func start(longSide: Int, displayID: UInt32?, captureAudio: Bool) async throws -> CaptureStart {
+    func start(
+        longSide: Int,
+        displayID: UInt32?,
+        captureAudio: Bool,
+        framesPerSecond: Int = 30,
+        lockDisplay: Bool = false
+    ) async throws -> CaptureStart {
         stop()
         startToken += 1
         let token = startToken
@@ -34,7 +40,14 @@ nonisolated final class ScreenCapturer: NSObject, SCStreamOutput, SCStreamDelega
         let names = await MainActor.run { ScreenCapturer.displayNames() }
         let displays = Self.sharedDisplays(from: content.displays, names: names)
         let mainID = CGMainDisplayID()
-        guard let chosenID = DisplayList.resolvedID(preferred: displayID, displays: displays, mainID: mainID),
+        let chosenID: UInt32?
+        if lockDisplay {
+            chosenID = displayID
+        } else {
+            chosenID = DisplayList.resolvedID(preferred: displayID, displays: displays, mainID: mainID)
+        }
+        guard let chosenID,
+              displays.contains(where: { $0.id == chosenID }),
               let display = content.displays.first(where: { $0.displayID == chosenID }) else {
             throw CaptureError.noDisplay
         }
@@ -51,7 +64,7 @@ nonisolated final class ScreenCapturer: NSObject, SCStreamOutput, SCStreamDelega
         configuration.height = height
         configuration.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
         configuration.showsCursor = true
-        configuration.minimumFrameInterval = CMTime(value: 1, timescale: 30)
+        configuration.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(max(framesPerSecond, 1)))
         configuration.queueDepth = 4
         configuration.scalesToFit = true
         if captureAudio {

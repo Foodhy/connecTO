@@ -31,7 +31,7 @@ final class EventInjector {
             postText(text)
         case .media(let action):
             applyMedia(action)
-        case .hello, .pair, .paired, .needCode, .rejected, .ping, .pong, .videoHello, .screenUnavailable, .quality, .displays, .screen, .audio:
+        case .hello, .pair, .paired, .needCode, .rejected, .ping, .pong, .videoHello, .screenUnavailable, .quality, .displays, .screen, .audio, .role:
             break
         }
     }
@@ -151,10 +151,21 @@ final class EventInjector {
             }
             return
         }
+        let holdShift = modifiers.contains(.shift) && code != Self.leftShift && code != Self.rightShift
+        if holdShift, phase == .down {
+            postHardwareKey(Self.leftShift, down: true, modifiers: .shift)
+        }
+        postHardwareKey(code, down: phase == .down, modifiers: modifiers)
+        if holdShift, phase == .up {
+            postHardwareKey(Self.leftShift, down: false, modifiers: [])
+        }
+    }
+
+    private func postHardwareKey(_ code: UInt16, down: Bool, modifiers: KeyModifiers) {
         guard let event = CGEvent(
             keyboardEventSource: keyboardSource,
             virtualKey: CGKeyCode(code),
-            keyDown: phase == .down
+            keyDown: down
         ) else { return }
         event.flags = flags(modifiers)
         event.post(tap: .cghidEventTap)
@@ -220,6 +231,9 @@ final class EventInjector {
             data2: -1
         )?.cgEvent?.post(tap: .cghidEventTap)
     }
+
+    private static let leftShift: UInt16 = 56
+    private static let rightShift: UInt16 = 60
 
     private func flags(_ modifiers: KeyModifiers) -> CGEventFlags {
         var flags = CGEventFlags()

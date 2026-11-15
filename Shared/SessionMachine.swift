@@ -48,7 +48,7 @@ nonisolated struct SessionMachine: Equatable, Sendable {
                 trustedDeviceIDs.insert(deviceID)
                 return pair(deviceID, newSessionID: newSessionID())
             }
-        case .pointer, .button, .scroll, .key, .text, .media, .cursor, .quality, .screen, .audio:
+        case .pointer, .button, .scroll, .key, .text, .media, .cursor, .quality, .screen, .audio, .role:
             guard case .paired = phase else {
                 return .reply(.rejected(.notPaired))
             }

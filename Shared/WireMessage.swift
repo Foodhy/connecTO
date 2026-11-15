@@ -39,6 +39,11 @@ nonisolated enum MediaAction: String, Codable, Equatable, Sendable {
     case previous
 }
 
+nonisolated enum LinkMode: String, Codable, Equatable, Sendable {
+    case control
+    case extend
+}
+
 nonisolated enum SpecialKey {
     static let `return`: UInt16 = 36
     static let tab: UInt16 = 48
@@ -71,6 +76,7 @@ nonisolated enum WireMessage: Equatable, Sendable {
     case displays(items: [SharedDisplay], active: UInt32)
     case screen(UInt32)
     case audio(Bool)
+    case role(LinkMode)
     case ping
     case pong
 }
@@ -99,6 +105,7 @@ nonisolated extension WireMessage: Codable {
         case active
         case displayID
         case enabled
+        case mode
     }
 
     func encode(to encoder: Encoder) throws {
@@ -167,6 +174,9 @@ nonisolated extension WireMessage: Codable {
         case .audio(let enabled):
             try container.encode("audio", forKey: .type)
             try container.encode(enabled, forKey: .enabled)
+        case .role(let mode):
+            try container.encode("role", forKey: .type)
+            try container.encode(mode, forKey: .mode)
         case .ping:
             try container.encode("ping", forKey: .type)
         case .pong:
@@ -241,6 +251,8 @@ nonisolated extension WireMessage: Codable {
             self = .screen(try container.decode(UInt32.self, forKey: .displayID))
         case "audio":
             self = .audio(try container.decode(Bool.self, forKey: .enabled))
+        case "role":
+            self = .role(try container.decode(LinkMode.self, forKey: .mode))
         case "ping":
             self = .ping
         case "pong":

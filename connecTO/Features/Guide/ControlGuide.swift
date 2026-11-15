@@ -70,6 +70,12 @@ nonisolated enum ControlGuide {
             detail: "Elige qué monitor del Mac se ve. El cursor cae en esa pantalla."
         ),
         ControlLesson(
+            id: "extend",
+            symbol: "rectangle.connected.to.line.below",
+            title: "Monitor externo",
+            detail: "Al elegir el Mac puedes controlar una pantalla que ya tiene, o ser un monitor más. En monitor la imagen ocupa todo el iPad. El número cambia la resolución. El botón rojo abre la pregunta para terminar la sesión."
+        ),
+        ControlLesson(
             id: "sound",
             symbol: "speaker.wave.2",
             title: "Sonido",

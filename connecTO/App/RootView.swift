@@ -19,8 +19,8 @@ struct RootView: View {
     private var content: some View {
         switch client.phase {
         case .idle:
-            DiscoverView(browser: browser) { mac in
-                client.connect(to: mac)
+            DiscoverView(browser: browser) { mac, mode in
+                client.connect(to: mac, mode: mode)
             }
         case .connecting:
             ProgressView("Conectando con \(client.macName)…")

@@ -26,6 +26,7 @@ struct ControlGuideTests {
             "nextSpace",
             "quality",
             "display",
+            "extend",
             "sound",
             "media",
             "permissions",

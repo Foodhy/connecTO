@@ -15,6 +15,17 @@ struct KeyMappingTests {
         #expect(KeyMapping.resolve("hola", modifiers: .command) == .text("hola"))
     }
 
+    @Test func shiftTypesTheShiftedKey() {
+        #expect(KeyMapping.resolve("c", modifiers: .shift) == .key(8, .shift))
+        #expect(KeyMapping.resolve("á", modifiers: .shift) == .text("Á"))
+    }
+
+    @Test func capsLockActsAsShiftUntilShiftCancelsIt() {
+        #expect(KeyMapping.hardwareModifiers(shift: false, capsLock: true, command: false, option: false, control: false) == .shift)
+        #expect(KeyMapping.hardwareModifiers(shift: true, capsLock: true, command: false, option: false, control: false) == [])
+        #expect(KeyMapping.hardwareModifiers(shift: true, capsLock: false, command: true, option: false, control: false) == [.shift, .command])
+    }
+
     @Test func iPadKeyBecomesTheMacKey() {
         #expect(HardwareKeyCode.macKeyCode(hidUsage: 4) == 0)
         #expect(HardwareKeyCode.macKeyCode(hidUsage: 22) == 1)

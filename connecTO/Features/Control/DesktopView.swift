@@ -7,12 +7,21 @@ struct DesktopView: View {
     var client: SessionClient
     var dragArmed: Bool
     var clickArmed: Bool
+    var fillsScreen = false
 
     var body: some View {
         DesktopRepresentable(client: client, dragArmed: dragArmed, clickArmed: clickArmed)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.black, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .background(Color.black)
+            .clipShape(screenShape)
+    }
+
+    private var screenShape: AnyShape {
+        if fillsScreen {
+            AnyShape(Rectangle())
+        } else {
+            AnyShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        }
     }
 }
 
@@ -337,12 +346,13 @@ final class DesktopCanvas: UIView {
     }
 
     private static func modifiers(_ flags: UIKeyModifierFlags) -> KeyModifiers {
-        var modifiers = KeyModifiers()
-        if flags.contains(.command) { modifiers.insert(.command) }
-        if flags.contains(.alternate) { modifiers.insert(.option) }
-        if flags.contains(.shift) { modifiers.insert(.shift) }
-        if flags.contains(.control) { modifiers.insert(.control) }
-        return modifiers
+        KeyMapping.hardwareModifiers(
+            shift: flags.contains(.shift),
+            capsLock: flags.contains(.alphaShift),
+            command: flags.contains(.command),
+            option: flags.contains(.alternate),
+            control: flags.contains(.control)
+        )
     }
 
     private func clear(_ touches: Set<UITouch>) {

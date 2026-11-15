@@ -28,6 +28,8 @@ struct WireMessageTests {
             .quality(longSide: 1920),
             .screen(2),
             .audio(true),
+            .role(.extend),
+            .role(.control),
             .displays(
                 items: [SharedDisplay(id: 1, name: "Studio", width: 1920, height: 1080)],
                 active: 1

@@ -22,6 +22,10 @@ final class SessionServer {
     private var preferredLongSide = 1920
     private var preferredDisplayID: UInt32?
     private var activeDisplayID: UInt32 = 0
+    private var linkMode: LinkMode = .control
+    private var roleKnown = false
+    private var videoHelloAccepted = false
+    private var virtualDisplay: VirtualDisplay?
     private var redirectingAudio = false
     private var savedMute: Bool?
     private var capturing = false
@@ -66,6 +70,8 @@ final class SessionServer {
         store.save([])
         connectedDeviceName = nil
         pendingName = nil
+        linkMode = .control
+        roleKnown = false
         connection?.cancel()
         connection = nil
         receiving = false
@@ -187,6 +193,8 @@ final class SessionServer {
                 applyScreen(displayID)
             case .audio(let enabled):
                 applyAudio(enabled)
+            case .role(let mode):
+                applyRole(mode)
             default:
                 injector.apply(input, displayFrame: displayFrame)
             }
@@ -273,7 +281,19 @@ final class SessionServer {
             closeVideo()
             return
         }
+        videoHelloAccepted = true
         beginCapture()
+    }
+
+    private func applyRole(_ mode: LinkMode) {
+        let changed = mode != linkMode || !roleKnown
+        linkMode = mode
+        roleKnown = true
+        if capturing, changed {
+            restartCapture()
+        } else if videoHelloAccepted {
+            beginCapture()
+        }
     }
 
     private func applyQuality(_ longSide: Int) {
@@ -285,6 +305,9 @@ final class SessionServer {
     }
 
     private func applyScreen(_ displayID: UInt32) {
+        if linkMode == .extend, displayID != virtualDisplay?.displayID {
+            return
+        }
         guard displayID != activeDisplayID else { return }
         preferredDisplayID = displayID
         guard capturing else { return }
@@ -322,7 +345,7 @@ final class SessionServer {
     }
 
     private func beginCapture() {
-        guard !capturing else { return }
+        guard roleKnown, !capturing else { return }
         capturing = true
         captureGeneration += 1
         let generation = captureGeneration
@@ -341,11 +364,20 @@ final class SessionServer {
             }
         }
         Task { @MainActor in
+            let target = await captureTarget(generation: generation)
+            guard captureGeneration == generation else { return }
+            guard let target else {
+                send(.screenUnavailable)
+                closeVideo()
+                return
+            }
             do {
                 let started = try await capturer.start(
                     longSide: preferredLongSide,
-                    displayID: preferredDisplayID,
-                    captureAudio: redirectingAudio
+                    displayID: target.displayID,
+                    captureAudio: redirectingAudio,
+                    framesPerSecond: target.framesPerSecond,
+                    lockDisplay: target.lockDisplay
                 )
                 guard captureGeneration == generation else { return }
                 displayFrame = started.frame
@@ -368,6 +400,27 @@ final class SessionServer {
         }
     }
 
+    private struct CaptureTarget {
+        var displayID: UInt32?
+        var framesPerSecond: Int
+        var lockDisplay: Bool
+    }
+
+    /// En `extend` el id es el del display virtual. Si no aparece, no hay captura.
+    private func captureTarget(generation: Int) async -> CaptureTarget? {
+        guard linkMode == .extend else {
+            virtualDisplay = nil
+            return CaptureTarget(displayID: preferredDisplayID, framesPerSecond: 30, lockDisplay: false)
+        }
+        if virtualDisplay == nil {
+            virtualDisplay = VirtualDisplay()
+        }
+        guard let virtualDisplay else { return nil }
+        let listed = await virtualDisplay.waitUntilListed()
+        guard captureGeneration == generation, listed else { return nil }
+        return CaptureTarget(displayID: virtualDisplay.displayID, framesPerSecond: 60, lockDisplay: true)
+    }
+
     private func sendVideo(_ data: Data) {
         videoConnection?.send(content: data, completion: .contentProcessed { _ in })
     }
@@ -375,8 +428,10 @@ final class SessionServer {
     private func closeVideo() {
         capturing = false
         captureGeneration += 1
+        videoHelloAccepted = false
         displayFrame = .zero
         activeDisplayID = 0
+        virtualDisplay = nil
         if redirectingAudio {
             redirectingAudio = false
             restoreMute()
@@ -397,13 +452,18 @@ final class SessionServer {
         connectedDeviceName = nil
         pendingName = nil
         machine.phase = .waiting
+        linkMode = .control
+        roleKnown = false
         closeVideo()
         publish()
     }
 
     private func publish() {
         if let connectedDeviceName {
-            host?.setLink(label: "\(connectedDeviceName) conectado", linked: true)
+            let label = linkMode == .extend
+                ? "\(connectedDeviceName) está de monitor"
+                : "\(connectedDeviceName) conectado"
+            host?.setLink(label: label, linked: true)
         } else if pendingName != nil {
             host?.setLink(label: "Esperando el código", linked: false)
         } else {

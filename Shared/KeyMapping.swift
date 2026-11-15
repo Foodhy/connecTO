@@ -6,13 +6,36 @@ nonisolated enum KeyResolution: Equatable, Sendable {
 }
 
 /// Si hay comando, opción o control, una letra se manda como atajo. Si no, como texto (con acentos).
+/// Mayúsculas solas salen como la tecla con ⇧, para que el Mac use su propio teclado.
 nonisolated enum KeyMapping {
     static func resolve(_ text: String, modifiers: KeyModifiers) -> KeyResolution {
         let shortcut = modifiers.contains(.command) || modifiers.contains(.option) || modifiers.contains(.control)
         if shortcut, text.count == 1, let character = text.first, let code = virtualKey(for: character) {
             return .key(code, modifiers)
         }
+        if modifiers.contains(.shift) {
+            if text.count == 1, let character = text.first, let code = virtualKey(for: character) {
+                return .key(code, modifiers)
+            }
+            return .text(text.uppercased())
+        }
         return .text(text)
+    }
+
+    /// Bloq Mayús del iPad llega como `capsLock`, no como shift. Las dos a la vez se cancelan.
+    static func hardwareModifiers(
+        shift: Bool,
+        capsLock: Bool,
+        command: Bool,
+        option: Bool,
+        control: Bool
+    ) -> KeyModifiers {
+        var modifiers = KeyModifiers()
+        if shift != capsLock { modifiers.insert(.shift) }
+        if command { modifiers.insert(.command) }
+        if option { modifiers.insert(.option) }
+        if control { modifiers.insert(.control) }
+        return modifiers
     }
 
     static func virtualKey(for character: Character) -> UInt16? {

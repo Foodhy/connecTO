@@ -17,6 +17,8 @@ The first time an iPad connects, the Mac shows a 6-digit code in the menu bar. T
 
 One iPad controls the Mac at a time. There is no account and no connection off the local network.
 
+Choosing a Mac asks which mode to use. **Controlar el Mac** shows a display the Mac already has. **Monitor externo** adds a virtual display and shows only that. The build-up of that mode is in [docs/monitor-virtual.md](docs/monitor-virtual.md).
+
 ## What you need
 
 - A Mac on macOS 15 or later

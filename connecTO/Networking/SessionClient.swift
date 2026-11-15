@@ -23,6 +23,7 @@ final class SessionClient {
     private(set) var displays: [SharedDisplay] = []
     private(set) var activeDisplay: UInt32 = 0
     private(set) var hearsAudio = false
+    private(set) var linkMode: LinkMode = .control
 
     private var connection: NWConnection?
     private var endpoint: NWEndpoint?
@@ -44,9 +45,10 @@ final class SessionClient {
     private var scrollScheduled = false
     private let speaker = SystemAudioPlayer()
 
-    func connect(to mac: DiscoveredMac) {
+    func connect(to mac: DiscoveredMac, mode: LinkMode) {
         tearDown()
         suppressAuto = false
+        linkMode = mode
         endpoint = mac.endpoint
         macName = mac.name
         screenDenied = false
@@ -89,7 +91,8 @@ final class SessionClient {
         guard phase == .idle, !suppressAuto else { return }
         guard let saved = UserDefaults.standard.string(forKey: Self.lastMacKey),
               let mac = macs.first(where: { $0.name == saved }) else { return }
-        connect(to: mac)
+        let mode = LinkMode(rawValue: UserDefaults.standard.string(forKey: Self.lastModeKey) ?? "") ?? .control
+        connect(to: mac, mode: mode)
     }
 
     func movePointer(dx: Double, dy: Double) {
@@ -158,6 +161,7 @@ final class SessionClient {
     }
 
     func selectDisplay(_ id: UInt32) {
+        guard linkMode == .control else { return }
         guard displays.contains(where: { $0.id == id }), id != activeDisplay else { return }
         activeDisplay = id
         sendControl(.screen(id))
@@ -255,6 +259,8 @@ final class SessionClient {
             phase = .controlling
             notice = nil
             UserDefaults.standard.set(macName, forKey: Self.lastMacKey)
+            UserDefaults.standard.set(linkMode.rawValue, forKey: Self.lastModeKey)
+            sendNow(.role(linkMode))
             sendNow(.quality(longSide: Self.pictureLongSide))
             openVideo()
         case .screenUnavailable:
@@ -283,7 +289,7 @@ final class SessionClient {
             case .notPaired:
                 phase = .needsCode
             }
-        case .pong, .hello, .pair, .pointer, .button, .scroll, .key, .text, .media, .ping, .cursor, .quality, .videoHello, .screen:
+        case .pong, .hello, .pair, .pointer, .button, .scroll, .key, .text, .media, .ping, .cursor, .quality, .videoHello, .screen, .role:
             break
         }
     }
@@ -417,6 +423,7 @@ final class SessionClient {
     }
 
     private static let lastMacKey = "connecTO.lastMacName"
+    private static let lastModeKey = "connecTO.lastLinkMode"
     static let longSideKey = "connecTO.longSide"
 
     static var pictureLongSide: Int {
