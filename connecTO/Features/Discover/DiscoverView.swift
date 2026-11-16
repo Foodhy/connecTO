@@ -53,15 +53,19 @@ struct DiscoverView: View {
                 titleVisibility: .visible,
                 presenting: pendingMac
             ) { mac in
-                Button("Controlar el Mac") {
+                Button(mac.isWindows ? "Controlar el PC" : "Controlar el Mac") {
                     onSelect(mac, .control)
                 }
-                Button("Monitor externo") {
-                    onSelect(mac, .extend)
+                if !mac.isWindows {
+                    Button("Monitor externo") {
+                        onSelect(mac, .extend)
+                    }
                 }
                 Button("Cancelar", role: .cancel) {}
-            } message: { _ in
-                Text("Controlar muestra una pantalla que el Mac ya tiene. Monitor externo añade una pantalla más.")
+            } message: { mac in
+                Text(mac.isWindows
+                    ? "Controlar muestra una pantalla que el PC ya tiene."
+                    : "Controlar muestra una pantalla que el Mac ya tiene. Monitor externo añade una pantalla más.")
             }
         }
     }

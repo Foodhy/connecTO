@@ -1,0 +1,35 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="ConnecTOWin.StatusWindow"
+        Width="280"
+        SizeToContent="Height"
+        CanResize="False"
+        ShowInTaskbar="False"
+        Topmost="True"
+        SystemDecorations="None"
+        Background="#1C1C1E"
+        ExtendClientAreaToDecorationsHint="True">
+  <StackPanel Margin="16" Spacing="12">
+    <TextBlock Text="Código" FontSize="12" Foreground="#A1A1A6"/>
+    <TextBlock x:Name="CodeText" FontSize="40" FontWeight="SemiBold" Foreground="White"/>
+    <TextBlock x:Name="ExpiresText" Foreground="#A1A1A6"/>
+    <TextBlock x:Name="LinkText" Foreground="White" TextWrapping="Wrap"/>
+    <TextBlock x:Name="CaptureText" FontSize="14" Foreground="#A1A1A6" TextWrapping="Wrap"/>
+    <TextBlock x:Name="InputText" FontSize="14" Foreground="#A1A1A6" TextWrapping="Wrap"/>
+    <TextBlock Text="El cursor y el teclado no entran en ventanas de administrador."
+               FontSize="14"
+               Foreground="#A1A1A6"
+               TextWrapping="Wrap"/>
+    <TextBlock x:Name="ExtendText"
+               FontSize="14"
+               Foreground="#A1A1A6"
+               TextWrapping="Wrap"
+               IsVisible="False"
+               Text="El monitor virtual no está en Windows. Se muestra la pantalla real."/>
+    <Button x:Name="FirewallButton" Content="Abrir el firewall" HorizontalAlignment="Left" HorizontalContentAlignment="Left" Click="OpenFirewall"/>
+    <Button Content="Nuevo código" HorizontalAlignment="Left" HorizontalContentAlignment="Left" Click="NewCode"/>
+    <Button Content="Olvidar iPads" HorizontalAlignment="Left" HorizontalContentAlignment="Left" Click="Forget"/>
+    <Border Height="1" Background="#3A3A3C"/>
+    <Button Content="Salir" HorizontalAlignment="Left" HorizontalContentAlignment="Left" Click="Quit"/>
+  </StackPanel>
+</Window>

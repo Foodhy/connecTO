@@ -17,3 +17,8 @@ DerivedData/
 .build/
 .swiftpm/
 docs/
+
+# .NET
+**/bin/
+**/obj/
+connecTOWin/Install/payload/
