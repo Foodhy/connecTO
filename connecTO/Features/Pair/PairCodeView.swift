@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PairCodeView: View {
     var macName: String
+    var isWindows: Bool
     @Binding var code: String
     var message: String?
     var onSubmit: () -> Void
@@ -11,7 +12,9 @@ struct PairCodeView: View {
         VStack(spacing: 20) {
             Text(macName)
                 .font(.title2.weight(.semibold))
-            Text("Escribe los 6 dígitos de la barra de menú del Mac.")
+            Text(isWindows
+                ? "Escribe los 6 dígitos del icono de connecTO, junto al reloj del PC."
+                : "Escribe los 6 dígitos de la barra de menú del Mac.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
             TextField("482 193", text: $code)

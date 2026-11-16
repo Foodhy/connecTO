@@ -24,6 +24,7 @@ final class SessionClient {
     private(set) var activeDisplay: UInt32 = 0
     private(set) var hearsAudio = false
     private(set) var linkMode: LinkMode = .control
+    private(set) var isWindows = false
 
     private var connection: NWConnection?
     private var endpoint: NWEndpoint?
@@ -51,6 +52,7 @@ final class SessionClient {
         linkMode = mode
         endpoint = mac.endpoint
         macName = mac.name
+        isWindows = mac.isWindows
         screenDenied = false
         screenAvailable = false
         videoSize = .zero
@@ -280,12 +282,12 @@ final class SessionClient {
                 notice = "Ese código no coincide."
                 phase = .needsCode
             case .expiredCode:
-                notice = "Ese código ya venció. Mira el nuevo en el Mac."
+                notice = "Ese código ya venció. Mira el nuevo en el \(hostName)."
                 phase = .needsCode
             case .unsupportedVersion:
                 suppressAuto = true
                 tearDown()
-                phase = .failed("El Mac y el iPad no hablan la misma versión.")
+                phase = .failed("El \(hostName) y el iPad no hablan la misma versión.")
             case .notPaired:
                 phase = .needsCode
             }
@@ -425,6 +427,8 @@ final class SessionClient {
     private static let lastMacKey = "connecTO.lastMacName"
     private static let lastModeKey = "connecTO.lastLinkMode"
     static let longSideKey = "connecTO.longSide"
+
+    var hostName: String { isWindows ? "PC" : "Mac" }
 
     static var pictureLongSide: Int {
         let stored = UserDefaults.standard.integer(forKey: longSideKey)

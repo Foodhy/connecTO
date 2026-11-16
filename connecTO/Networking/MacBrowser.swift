@@ -45,5 +45,5 @@ nonisolated private func windowsHost(_ result: NWBrowser.Result) -> Bool {
 
 nonisolated private func dedupedMacs(_ macs: [DiscoveredMac]) -> [DiscoveredMac] {
     var seen = Set<String>()
-    return macs.filter { seen.insert($0.name).inserted }
+    return macs.filter { seen.insert($0.id).inserted }
 }

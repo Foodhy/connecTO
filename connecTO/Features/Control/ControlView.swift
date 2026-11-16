@@ -92,7 +92,9 @@ struct ControlView: View {
     private var surface: some View {
         if client.screenDenied {
             VStack(spacing: 8) {
-                Text("El Mac no está compartiendo la pantalla. Activa Grabación de pantalla en su menú y vuelve a conectar.")
+                Text(client.isWindows
+                    ? "El PC no está enviando la imagen. Vuelve a conectar."
+                    : "El Mac no está compartiendo la pantalla. Activa Grabación de pantalla en su menú y vuelve a conectar.")
                     .font(.callout)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
@@ -198,9 +200,9 @@ struct ControlView: View {
                 client.setHearsOnPad(false)
             } label: {
                 if client.hearsAudio {
-                    Text("En el Mac")
+                    Text("En el \(client.hostName)")
                 } else {
-                    Label("En el Mac", systemImage: "checkmark")
+                    Label("En el \(client.hostName)", systemImage: "checkmark")
                 }
             }
             Button {
@@ -217,7 +219,7 @@ struct ControlView: View {
         }
         .buttonStyle(.bordered)
         .tint(client.hearsAudio ? .orange : nil)
-        .accessibilityLabel(client.hearsAudio ? "Sonido en el iPad" : "Sonido en el Mac")
+        .accessibilityLabel(client.hearsAudio ? "Sonido en el iPad" : "Sonido en el \(client.hostName)")
     }
 
     @ViewBuilder

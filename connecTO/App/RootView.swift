@@ -41,6 +41,7 @@ private struct PairScreen: View {
     var body: some View {
         PairCodeView(
             macName: client.macName,
+            isWindows: client.isWindows,
             code: $client.draftCode,
             message: client.notice,
             onSubmit: client.submitCode,

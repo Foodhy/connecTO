@@ -23,29 +23,10 @@ public sealed class H264Encoder : IDisposable
         this.width = width;
         this.height = height;
         EnsureStarted();
-        transform = OpenTransform();
-        var nv12 = VideoFormatGuids.FromFourCC(new FourCC("NV12"));
-        var h264 = VideoFormatGuids.FromFourCC(new FourCC("H264"));
-        using var output = MediaFactory.MFCreateMediaType();
-        output.Set(MediaTypeAttributeKeys.MajorType, MediaTypeGuids.Video);
-        output.Set(MediaTypeAttributeKeys.Subtype, h264);
-        output.Set(MediaTypeAttributeKeys.AvgBitrate, (uint)bitRate);
-        output.Set(MediaTypeAttributeKeys.FrameSize, Pack(width, height));
-        output.Set(MediaTypeAttributeKeys.FrameRate, Pack(30, 1));
-        output.Set(MediaTypeAttributeKeys.InterlaceMode, (uint)VideoInterlaceMode.Progressive);
-        output.Set(MediaTypeAttributeKeys.Mpeg2Profile, 77u);
-        output.Set(MediaTypeAttributeKeys.MaxKeyframeSpacing, 60u);
-        output.Set(MediaTypeAttributeKeys.AllSamplesIndependent, 1u);
-        transform.SetOutputType(0, output, 0);
-        using var input = MediaFactory.MFCreateMediaType();
-        input.Set(MediaTypeAttributeKeys.MajorType, MediaTypeGuids.Video);
-        input.Set(MediaTypeAttributeKeys.Subtype, nv12);
-        input.Set(MediaTypeAttributeKeys.FrameSize, Pack(width, height));
-        input.Set(MediaTypeAttributeKeys.FrameRate, Pack(30, 1));
-        input.Set(MediaTypeAttributeKeys.InterlaceMode, (uint)VideoInterlaceMode.Progressive);
-        transform.SetInputType(0, input, 0);
+        transform = OpenTransform(width, height, bitRate);
         try
         {
+            using var output = transform.GetOutputCurrentType(0);
             parameterSets = output.GetBlob(MediaTypeAttributeKeys.MpegSequenceHeader);
         }
         catch (Exception)
@@ -67,11 +48,11 @@ public sealed class H264Encoder : IDisposable
         using var buffer = MediaFactory.MFCreateMemoryBuffer(nv12.Length);
         buffer.Lock(out var pointer, out _, out _);
         Marshal.Copy(nv12, 0, pointer, nv12.Length);
-        buffer.Unlock();
         buffer.CurrentLength = nv12.Length;
+        buffer.Unlock();
         sample.AddBuffer(buffer);
         var tick = 10_000_000L / 30;
-        sample.SampleTime = frameCount * tick;
+        sample.SampleTime = (frameCount - 1) * tick;
         sample.SampleDuration = tick;
         transform.ProcessInput(0, sample, 0);
 
@@ -196,7 +177,7 @@ public sealed class H264Encoder : IDisposable
         return sample;
     }
 
-    private static IMFTransform OpenTransform()
+    private static IMFTransform OpenTransform(int width, int height, int bitRate)
     {
         var nv12 = VideoFormatGuids.FromFourCC(new FourCC("NV12"));
         var h264 = VideoFormatGuids.FromFourCC(new FourCC("H264"));
@@ -204,8 +185,8 @@ public sealed class H264Encoder : IDisposable
         var output = new RegisterTypeInfo { GuidMajorType = MediaTypeGuids.Video, GuidSubtype = h264 };
         var flags = new[]
         {
-            (uint)(EnumFlag.EnumFlagSortandfilter | EnumFlag.EnumFlagHardware | EnumFlag.EnumFlagSyncmft | EnumFlag.EnumFlagLocalmft),
             (uint)(EnumFlag.EnumFlagSortandfilter | EnumFlag.EnumFlagSyncmft | EnumFlag.EnumFlagLocalmft),
+            (uint)(EnumFlag.EnumFlagSortandfilter | EnumFlag.EnumFlagHardware | EnumFlag.EnumFlagSyncmft | EnumFlag.EnumFlagLocalmft),
         };
         foreach (var flag in flags)
         {
@@ -217,11 +198,28 @@ public sealed class H264Encoder : IDisposable
                     continue;
                 }
 
-                var activatePointer = Marshal.ReadIntPtr(array);
-                var activate = new IMFActivate(activatePointer);
-                var transform = activate.ActivateObject<IMFTransform>();
-                activate.Dispose();
-                return transform;
+                var stride = IntPtr.Size;
+                for (var index = 0; index < count; index++)
+                {
+                    var activatePointer = Marshal.ReadIntPtr(array, index * stride);
+                    IMFActivate? activate = null;
+                    IMFTransform? transform = null;
+                    try
+                    {
+                        activate = new IMFActivate(activatePointer);
+                        transform = activate.ActivateObject<IMFTransform>();
+                        if (TryConfigure(transform, width, height, bitRate))
+                        {
+                            return transform;
+                        }
+                    }
+                    catch (Exception)
+                    {
+                    }
+
+                    transform?.Dispose();
+                    activate?.Dispose();
+                }
             }
             finally
             {
@@ -235,6 +233,39 @@ public sealed class H264Encoder : IDisposable
         throw new InvalidOperationException("No hay codificador H.264.");
     }
 
+    private static bool TryConfigure(IMFTransform transform, int width, int height, int bitRate)
+    {
+        var h264 = VideoFormatGuids.FromFourCC(new FourCC("H264"));
+        var nv12 = VideoFormatGuids.FromFourCC(new FourCC("NV12"));
+        using var output = MediaFactory.MFCreateMediaType();
+        output.Set(MediaTypeAttributeKeys.MajorType, MediaTypeGuids.Video);
+        output.Set(MediaTypeAttributeKeys.Subtype, h264);
+        output.Set(MediaTypeAttributeKeys.AvgBitrate, (uint)bitRate);
+        output.Set(MediaTypeAttributeKeys.FrameSize, Pack(width, height));
+        output.Set(MediaTypeAttributeKeys.FrameRate, Pack(30, 1));
+        output.Set(MediaTypeAttributeKeys.InterlaceMode, (uint)VideoInterlaceMode.Progressive);
+        output.Set(MediaTypeAttributeKeys.PixelAspectRatio, Pack(1, 1));
+        try
+        {
+            output.Set(MediaTypeAttributeKeys.Mpeg2Profile, 77u);
+            output.Set(MediaTypeAttributeKeys.MaxKeyframeSpacing, 60u);
+        }
+        catch (Exception)
+        {
+        }
+
+        transform.SetOutputType(0, output, 0);
+        using var input = MediaFactory.MFCreateMediaType();
+        input.Set(MediaTypeAttributeKeys.MajorType, MediaTypeGuids.Video);
+        input.Set(MediaTypeAttributeKeys.Subtype, nv12);
+        input.Set(MediaTypeAttributeKeys.FrameSize, Pack(width, height));
+        input.Set(MediaTypeAttributeKeys.FrameRate, Pack(30, 1));
+        input.Set(MediaTypeAttributeKeys.InterlaceMode, (uint)VideoInterlaceMode.Progressive);
+        input.Set(MediaTypeAttributeKeys.DefaultStride, width);
+        transform.SetInputType(0, input, 0);
+        return true;
+    }
+
     private static void EnsureStarted()
     {
         if (started)
@@ -242,6 +273,7 @@ public sealed class H264Encoder : IDisposable
             return;
         }
 
+        ComApartment.Ensure();
         MediaFactory.MFStartup(false);
         started = true;
     }

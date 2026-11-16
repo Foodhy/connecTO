@@ -7,7 +7,8 @@ namespace ConnecTOWin;
 
 public sealed class MdnsAdvertiser : IDisposable
 {
-    private readonly UdpClient socket;
+    private readonly UdpClient? socket;
+    private readonly WindowsDnsPublisher? publisher;
     private readonly byte[] announcement;
     private readonly CancellationTokenSource lifetime = new();
     private readonly string instanceLabel;
@@ -15,6 +16,13 @@ public sealed class MdnsAdvertiser : IDisposable
     public MdnsAdvertiser(string instanceName, int port)
     {
         instanceLabel = Sanitize(instanceName);
+        if (WindowsDnsPublisher.TryStart(instanceLabel, port, out publisher))
+        {
+            socket = null;
+            announcement = [];
+            return;
+        }
+
         var host = Sanitize(Environment.MachineName);
         if (string.IsNullOrEmpty(host))
         {
@@ -43,7 +51,8 @@ public sealed class MdnsAdvertiser : IDisposable
     public void Dispose()
     {
         lifetime.Cancel();
-        socket.Dispose();
+        publisher?.Dispose();
+        socket?.Dispose();
     }
 
     private async Task Announce(CancellationToken token)
@@ -64,11 +73,17 @@ public sealed class MdnsAdvertiser : IDisposable
 
     private async Task Listen(CancellationToken token)
     {
+        var client = socket;
+        if (client == null)
+        {
+            return;
+        }
+
         while (!token.IsCancellationRequested)
         {
             try
             {
-                var result = await socket.ReceiveAsync(token);
+                var result = await client.ReceiveAsync(token);
                 if (IsQueryForUs(result.Buffer))
                 {
                     Send();
@@ -91,9 +106,15 @@ public sealed class MdnsAdvertiser : IDisposable
 
     private void Send()
     {
+        var client = socket;
+        if (client == null)
+        {
+            return;
+        }
+
         try
         {
-            socket.Send(announcement, announcement.Length, new IPEndPoint(IPAddress.Parse("224.0.0.251"), 5353));
+            client.Send(announcement, announcement.Length, new IPEndPoint(IPAddress.Parse("224.0.0.251"), 5353));
         }
         catch (SocketException)
         {
@@ -125,8 +146,8 @@ public sealed class MdnsAdvertiser : IDisposable
     private static byte[] Build(string instance, string host, int port, IReadOnlyList<IPAddress> addresses)
     {
         var writer = new DnsWriter();
-        var answers = 2 + addresses.Count;
-        writer.Header(0, 0x8400, 0, (ushort)answers, 0, 1);
+        var answers = 3 + addresses.Count;
+        writer.Header(0, 0x8400, 0, (ushort)answers, 0, 0);
         writer.Record("_connecto._tcp.local", 12, 1, 120, () => writer.Name($"{instance}._connecto._tcp.local"));
         writer.Record($"{instance}._connecto._tcp.local", 33, 0x8001, 120, () =>
         {
@@ -135,18 +156,18 @@ public sealed class MdnsAdvertiser : IDisposable
             writer.U16((ushort)port);
             writer.Name($"{host}.local");
         });
-        foreach (var address in addresses)
-        {
-            var bytes = address.GetAddressBytes();
-            writer.Record($"{host}.local", 1, 0x8001, 120, () => writer.Bytes(bytes));
-        }
-
         writer.Record($"{instance}._connecto._tcp.local", 16, 0x8001, 120, () =>
         {
             var text = Encoding.ASCII.GetBytes("plat=win");
             writer.Byte((byte)text.Length);
             writer.Bytes(text);
         });
+        foreach (var address in addresses)
+        {
+            var bytes = address.GetAddressBytes();
+            writer.Record($"{host}.local", 1, 0x8001, 120, () => writer.Bytes(bytes));
+        }
+
         return writer.ToArray();
     }
 

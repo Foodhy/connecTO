@@ -23,8 +23,13 @@ struct DiscoverView: View {
                             showsChoice = true
                         } label: {
                             HStack(spacing: 12) {
-                                Image(systemName: "laptopcomputer")
-                                Text(mac.name)
+                                Image(systemName: mac.isWindows ? "desktopcomputer" : "laptopcomputer")
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(mac.name)
+                                    Text(mac.isWindows ? "PC" : "Mac")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
                                 Spacer()
                                 Image(systemName: "chevron.right")
                                     .foregroundStyle(.tertiary)

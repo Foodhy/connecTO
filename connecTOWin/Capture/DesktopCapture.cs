@@ -19,24 +19,7 @@ public sealed class DesktopCapture : IScreenSource
     private EndpointVolume? volume;
     private AudioLoopback? audio;
 
-    public bool Probe()
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            return false;
-        }
-
-        try
-        {
-            using var created = CreateDevice(out var immediate);
-            immediate.Dispose();
-            return created != null;
-        }
-        catch (Exception)
-        {
-            return false;
-        }
-    }
+    public bool Probe() => OperatingSystem.IsWindows();
 
     public CaptureStartResult Start(
         int longSide,
@@ -62,8 +45,8 @@ public sealed class DesktopCapture : IScreenSource
         var chosen = DisplayList.ResolvedId(displayId, shared, main) ?? monitors[0].Id;
         var monitor = monitors.First(item => item.Id == chosen);
         var (width, height) = CaptureMath.OutputSize(monitor.Width, monitor.Height, longSide);
-        device = CreateDevice(out context!);
-        duplication = OpenDuplication(device, monitor.DeviceName);
+        ComApartment.Ensure();
+        TryDuplicate(monitor.DeviceName, out device, out context, out duplication);
         encoder = new H264Encoder(width, height, CaptureMath.BitRate(width, height));
         running = true;
         var localEncoder = encoder;
@@ -162,9 +145,9 @@ public sealed class DesktopCapture : IScreenSource
     }
 
     private void Loop(
-        ID3D11Device device,
-        ID3D11DeviceContext context,
-        IDXGIOutputDuplication duplication,
+        ID3D11Device? device,
+        ID3D11DeviceContext? context,
+        IDXGIOutputDuplication? duplication,
         H264Encoder encoder,
         MonitorInfo monitor,
         int width,
@@ -173,8 +156,12 @@ public sealed class DesktopCapture : IScreenSource
         Action onFailure)
     {
         var next = DateTime.UtcNow;
+        var started = DateTime.UtcNow;
+        var sent = false;
+        var duplicate = duplication;
         try
         {
+            ComApartment.Ensure();
             while (running)
             {
                 var wait = next - DateTime.UtcNow;
@@ -184,10 +171,37 @@ public sealed class DesktopCapture : IScreenSource
                 }
 
                 next = DateTime.UtcNow.AddSeconds(1.0 / 30);
-                if (!TryFrame(device, context, duplication, out var bgra, out var sourceWidth, out var sourceHeight, out var pitch))
+                byte[]? bgra = null;
+                var sourceWidth = 0;
+                var sourceHeight = 0;
+                var pitch = 0;
+                var lost = false;
+                if (duplicate != null
+                    && device != null
+                    && context != null
+                    && TryFrame(device, context, duplicate, out var captured, out sourceWidth, out sourceHeight, out pitch, out lost))
+                {
+                    bgra = captured;
+                }
+                else if (lost)
+                {
+                    duplicate = null;
+                }
+
+                if (bgra == null && (duplicate == null || (!sent && DateTime.UtcNow - started > TimeSpan.FromMilliseconds(200))))
+                {
+                    bgra = GrabScreen(monitor.X, monitor.Y, monitor.Width, monitor.Height);
+                    sourceWidth = monitor.Width;
+                    sourceHeight = monitor.Height;
+                    pitch = monitor.Width * 4;
+                }
+
+                if (bgra == null)
                 {
                     continue;
                 }
+
+                sent = true;
 
                 var nv12 = Nv12Convert.FromBgra(bgra, sourceWidth, sourceHeight, pitch, width, height);
                 foreach (var packet in encoder.Encode(nv12))
@@ -223,20 +237,26 @@ public sealed class DesktopCapture : IScreenSource
         out byte[] bgra,
         out int width,
         out int height,
-        out int pitch)
+        out int pitch,
+        out bool lost)
     {
         bgra = [];
         width = 0;
         height = 0;
         pitch = 0;
-        var result = duplication.AcquireNextFrame(16, out _, out var resource);
-        if (result == Vortice.DXGI.ResultCode.WaitTimeout || result.Failure || resource == null)
-        {
-            return false;
-        }
-
+        lost = false;
+        IDXGIResource? resource = null;
+        var acquired = false;
         try
         {
+            var result = duplication.AcquireNextFrame(16, out _, out resource);
+            lost = result == Vortice.DXGI.ResultCode.AccessLost;
+            acquired = result.Success && resource != null;
+            if (!acquired || resource == null)
+            {
+                return false;
+            }
+
             using var texture = resource.QueryInterface<ID3D11Texture2D>();
             var description = texture.Description;
             description.Usage = ResourceUsage.Staging;
@@ -259,60 +279,250 @@ public sealed class DesktopCapture : IScreenSource
             {
                 context.Unmap(staging, 0);
             }
+
+            return bgra.Length > 0;
+        }
+        catch (Exception)
+        {
+            lost = true;
+            return false;
         }
         finally
         {
-            resource.Dispose();
-            duplication.ReleaseFrame();
+            if (acquired)
+            {
+                resource?.Dispose();
+                duplication.ReleaseFrame();
+            }
         }
-
-        return bgra.Length > 0;
     }
 
-    private static IDXGIOutputDuplication OpenDuplication(ID3D11Device device, string deviceName)
+    private static void TryDuplicate(
+        string deviceName,
+        out ID3D11Device? device,
+        out ID3D11DeviceContext? context,
+        out IDXGIOutputDuplication? duplication)
     {
-        using var dxgi = device.QueryInterface<IDXGIDevice>();
-        dxgi.GetAdapter(out var adapter).CheckError();
-        using (adapter)
+        device = null;
+        context = null;
+        duplication = null;
+        try
         {
-            uint index = 0;
+            using var factory = DXGI.CreateDXGIFactory1<IDXGIFactory1>();
+            uint adapterIndex = 0;
             while (true)
             {
-                var result = adapter.EnumOutputs(index, out var output);
-                if (result.Failure || output == null)
+                var adapterResult = factory.EnumAdapters1(adapterIndex, out var adapter);
+                if (adapterResult.Failure || adapter == null)
                 {
                     break;
                 }
 
-                using (output)
+                using (adapter)
                 {
-                    var description = output.Description;
-                    if (string.Equals(description.DeviceName, deviceName, StringComparison.OrdinalIgnoreCase))
+                    if (TryOutput(adapter, deviceName, out device, out context, out duplication))
                     {
-                        using var output1 = output.QueryInterface<IDXGIOutput1>();
-                        return output1.DuplicateOutput(device);
+                        return;
                     }
                 }
 
-                index++;
+                adapterIndex++;
             }
         }
-
-        throw new InvalidOperationException("No se pudo duplicar la pantalla.");
+        catch (Exception)
+        {
+            device?.Dispose();
+            context?.Dispose();
+            duplication?.Dispose();
+            device = null;
+            context = null;
+            duplication = null;
+        }
     }
 
-    private static ID3D11Device CreateDevice(out ID3D11DeviceContext context)
+    private static bool TryOutput(
+        IDXGIAdapter1 adapter,
+        string deviceName,
+        out ID3D11Device? device,
+        out ID3D11DeviceContext? context,
+        out IDXGIOutputDuplication? duplication)
+    {
+        device = null;
+        context = null;
+        duplication = null;
+        IDXGIOutput? matched = null;
+        IDXGIOutput? first = null;
+        uint index = 0;
+        while (true)
+        {
+            var result = adapter.EnumOutputs(index, out var output);
+            if (result.Failure || output == null)
+            {
+                break;
+            }
+
+            first ??= output;
+            if (string.Equals(output.Description.DeviceName, deviceName, StringComparison.OrdinalIgnoreCase))
+            {
+                matched = output;
+                break;
+            }
+
+            if (!ReferenceEquals(first, output))
+            {
+                output.Dispose();
+            }
+
+            index++;
+        }
+
+        var chosen = matched ?? first;
+        if (chosen == null)
+        {
+            return false;
+        }
+
+        try
+        {
+            device = CreateDevice(adapter.NativePointer, out context!);
+            using var output1 = chosen.QueryInterface<IDXGIOutput1>();
+            duplication = output1.DuplicateOutput(device);
+            if (duplication != null)
+            {
+                return true;
+            }
+
+            device.Dispose();
+            context?.Dispose();
+            device = null;
+            context = null;
+            return false;
+        }
+        catch (Exception)
+        {
+            device?.Dispose();
+            context?.Dispose();
+            duplication?.Dispose();
+            device = null;
+            context = null;
+            duplication = null;
+            return false;
+        }
+        finally
+        {
+            chosen.Dispose();
+            if (first != null && !ReferenceEquals(first, chosen))
+            {
+                first.Dispose();
+            }
+        }
+    }
+
+    private static ID3D11Device CreateDevice(IntPtr adapter, out ID3D11DeviceContext context)
     {
         var levels = new[] { FeatureLevel.Level_11_0, FeatureLevel.Level_10_0 };
         D3D11.D3D11CreateDevice(
-            IntPtr.Zero,
-            DriverType.Hardware,
+            adapter,
+            adapter == IntPtr.Zero ? DriverType.Hardware : DriverType.Unknown,
             DeviceCreationFlags.BgraSupport,
             levels,
             out var device,
             out _,
             out context).CheckError();
         return device ?? throw new InvalidOperationException("Sin dispositivo de vídeo.");
+    }
+
+    private static byte[]? GrabScreen(int x, int y, int width, int height)
+    {
+        if (!OperatingSystem.IsWindows() || width <= 0 || height <= 0)
+        {
+            return null;
+        }
+
+        var screen = GetDC(IntPtr.Zero);
+        if (screen == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        var memory = CreateCompatibleDC(screen);
+        var bitmap = CreateCompatibleBitmap(screen, width, height);
+        var previous = SelectObject(memory, bitmap);
+        var copied = BitBlt(memory, 0, 0, width, height, screen, x, y, 0x00CC0020);
+        byte[]? pixels = null;
+        if (copied)
+        {
+            var info = new BitmapInfo
+            {
+                Size = Marshal.SizeOf<BitmapInfo>(),
+                Width = width,
+                Height = -height,
+                Planes = 1,
+                BitCount = 32,
+            };
+            pixels = new byte[width * height * 4];
+            var pin = GCHandle.Alloc(pixels, GCHandleType.Pinned);
+            try
+            {
+                if (GetDIBits(memory, bitmap, 0, (uint)height, pin.AddrOfPinnedObject(), ref info, 0) == 0)
+                {
+                    pixels = null;
+                }
+            }
+            finally
+            {
+                pin.Free();
+            }
+        }
+
+        SelectObject(memory, previous);
+        DeleteObject(bitmap);
+        DeleteDC(memory);
+        ReleaseDC(IntPtr.Zero, screen);
+        return pixels;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetDC(IntPtr window);
+
+    [DllImport("user32.dll")]
+    private static extern int ReleaseDC(IntPtr window, IntPtr dc);
+
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr CreateCompatibleDC(IntPtr dc);
+
+    [DllImport("gdi32.dll")]
+    private static extern bool DeleteDC(IntPtr dc);
+
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr CreateCompatibleBitmap(IntPtr dc, int width, int height);
+
+    [DllImport("gdi32.dll")]
+    private static extern IntPtr SelectObject(IntPtr dc, IntPtr obj);
+
+    [DllImport("gdi32.dll")]
+    private static extern bool DeleteObject(IntPtr obj);
+
+    [DllImport("gdi32.dll")]
+    private static extern bool BitBlt(IntPtr dest, int x, int y, int width, int height, IntPtr source, int sourceX, int sourceY, int op);
+
+    [DllImport("gdi32.dll")]
+    private static extern int GetDIBits(IntPtr dc, IntPtr bitmap, uint start, uint lines, IntPtr bits, ref BitmapInfo info, uint usage);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct BitmapInfo
+    {
+        public int Size;
+        public int Width;
+        public int Height;
+        public short Planes;
+        public short BitCount;
+        public int Compression;
+        public int SizeImage;
+        public int XPelsPerMeter;
+        public int YPelsPerMeter;
+        public int ClrUsed;
+        public int ClrImportant;
     }
 }
 
