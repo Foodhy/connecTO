@@ -159,6 +159,9 @@ public sealed class DesktopCapture : IScreenSource
         var started = DateTime.UtcNow;
         var sent = false;
         var duplicate = duplication;
+        byte[]? held = null;
+        var heldAt = DateTime.UtcNow;
+        var flushed = true;
         try
         {
             ComApartment.Ensure();
@@ -196,15 +199,24 @@ public sealed class DesktopCapture : IScreenSource
                     pitch = monitor.Width * 4;
                 }
 
-                if (bgra == null)
+                if (bgra != null)
                 {
-                    continue;
+                    sent = true;
+                    held = Nv12Convert.FromBgra(bgra, sourceWidth, sourceHeight, pitch, width, height);
+                    heldAt = DateTime.UtcNow;
+                    flushed = false;
+                    Publish(encoder.Encode(held));
                 }
+                else if (!flushed && held != null && DateTime.UtcNow - heldAt > TimeSpan.FromMilliseconds(30))
+                {
+                    flushed = true;
+                    Publish(encoder.Encode(held));
+                }
+            }
 
-                sent = true;
-
-                var nv12 = Nv12Convert.FromBgra(bgra, sourceWidth, sourceHeight, pitch, width, height);
-                foreach (var packet in encoder.Encode(nv12))
+            void Publish(IReadOnlyList<VideoPacket> packets)
+            {
+                foreach (var packet in packets)
                 {
                     if (!running)
                     {

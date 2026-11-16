@@ -249,6 +249,7 @@ public sealed class H264Encoder : IDisposable
         {
             output.Set(MediaTypeAttributeKeys.Mpeg2Profile, 77u);
             output.Set(MediaTypeAttributeKeys.MaxKeyframeSpacing, 60u);
+            output.Set(MediaTypeAttributeKeys.AllSamplesIndependent, 1u);
         }
         catch (Exception)
         {
@@ -263,6 +264,15 @@ public sealed class H264Encoder : IDisposable
         input.Set(MediaTypeAttributeKeys.InterlaceMode, (uint)VideoInterlaceMode.Progressive);
         input.Set(MediaTypeAttributeKeys.DefaultStride, width);
         transform.SetInputType(0, input, 0);
+        try
+        {
+            using var attributes = transform.Attributes;
+            attributes?.Set(LowLatency, 1u);
+        }
+        catch (Exception)
+        {
+        }
+
         return true;
     }
 
@@ -279,4 +289,6 @@ public sealed class H264Encoder : IDisposable
     }
 
     private static ulong Pack(int high, int low) => ((ulong)(uint)high << 32) | (uint)low;
+
+    private static readonly Guid LowLatency = new("9C27891A-ED7A-40e1-88E8-B22727A024EE");
 }
