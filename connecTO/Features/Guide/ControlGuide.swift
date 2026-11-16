@@ -85,7 +85,7 @@ nonisolated enum ControlGuide {
             id: "media",
             symbol: "playpause",
             title: "Volumen y reproducción",
-            detail: "En la misma fila, solo el icono: bajar volumen, silencio, subir volumen, pista anterior, pausa y pista siguiente. Desconectar es el último, en rojo. Desliza la fila si no caben."
+            detail: "En la misma fila, solo el icono: bajar volumen, silencio, subir volumen, pista anterior, pausa y pista siguiente. Desconectar es el botón rojo, a la derecha de Pantalla. Desliza la fila si no caben."
         ),
         ControlLesson(
             id: "permissions",

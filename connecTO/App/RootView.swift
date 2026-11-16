@@ -23,8 +23,11 @@ struct RootView: View {
                 client.connect(to: mac, mode: mode)
             }
         case .connecting:
-            ProgressView("Conectando con \(client.macName), \(client.hostName)…")
-                .padding(24)
+            ConnectingView(
+                macName: client.macName,
+                hostName: client.hostName,
+                onBack: client.disconnect
+            )
         case .needsCode:
             PairScreen(client: client)
         case .controlling:
@@ -47,6 +50,22 @@ private struct PairScreen: View {
             onSubmit: client.submitCode,
             onCancel: client.disconnect
         )
+    }
+}
+
+private struct ConnectingView: View {
+    var macName: String
+    var hostName: String
+    var onBack: () -> Void
+
+    var body: some View {
+        VStack(spacing: 28) {
+            ProgressView("Conectando con \(macName), \(hostName)…")
+            Button("Volver", action: onBack)
+                .buttonStyle(.borderedProminent)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

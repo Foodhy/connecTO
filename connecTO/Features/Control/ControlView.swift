@@ -171,12 +171,12 @@ struct ControlView: View {
                     sendSpace(SpecialKey.right)
                 }
                 displayMenu
-                soundMenu
-                MediaBarView(client: client)
-                qualityMenu
                 ControlTile("power", "Desconectar", tint: .red, prominent: true) {
                     confirmDisconnect = true
                 }
+                soundMenu
+                MediaBarView(client: client)
+                qualityMenu
             }
         }
         .fixedSize(horizontal: false, vertical: true)
