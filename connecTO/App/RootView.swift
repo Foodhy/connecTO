@@ -23,7 +23,7 @@ struct RootView: View {
                 client.connect(to: mac, mode: mode)
             }
         case .connecting:
-            ProgressView("Conectando con \(client.macName)…")
+            ProgressView("Conectando con \(client.macName), \(client.hostName)…")
                 .padding(24)
         case .needsCode:
             PairScreen(client: client)

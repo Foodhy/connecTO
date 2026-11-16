@@ -24,7 +24,7 @@ public sealed class WindowsHost : IDisposable
         try
         {
             server.Start();
-            advertiser = new MdnsAdvertiser(Environment.MachineName, server.Port);
+            advertiser = new MdnsAdvertiser(Environment.MachineName + " PC", server.Port);
         }
         catch (Exception)
         {

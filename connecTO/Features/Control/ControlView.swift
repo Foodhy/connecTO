@@ -39,8 +39,18 @@ struct ControlView: View {
                 actionRow
             }
             .padding(16)
-            .navigationTitle(client.macName)
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    VStack(spacing: 0) {
+                        Text(client.macName)
+                            .font(.headline)
+                        Text(client.hostName)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
             .alert("¿Seguro que quieres desconectar?", isPresented: $confirmDisconnect) {
                 Button("Desconectar", role: .destructive, action: onDisconnect)
                 Button("Cancelar", role: .cancel) {}

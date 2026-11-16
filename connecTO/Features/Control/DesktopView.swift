@@ -1,7 +1,7 @@
-import AVFoundation
 import CoreMedia
 import SwiftUI
 import UIKit
+import VideoToolbox
 
 struct DesktopView: View {
     var client: SessionClient
@@ -384,29 +384,83 @@ extension DesktopCanvas: UIGestureRecognizerDelegate {
 }
 
 final class H264Display {
-    let displayLayer = AVSampleBufferDisplayLayer()
+    let displayLayer = CALayer()
     private var format: CMFormatDescription?
-    private var timestamp = CMTime.zero
+    private var session: VTDecompressionSession?
+    private var callback: VTDecompressionOutputCallbackRecord?
 
     init() {
-        displayLayer.videoGravity = .resizeAspect
+        displayLayer.contentsGravity = .resizeAspect
+        displayLayer.backgroundColor = UIColor.black.cgColor
+        let layer = displayLayer
+        callback = VTDecompressionOutputCallbackRecord(
+            decompressionOutputCallback: { refcon, _, status, _, image, _, _ in
+                guard status == noErr, let image, let refcon else { return }
+                let target = Unmanaged<CALayer>.fromOpaque(refcon).takeUnretainedValue()
+                let show = {
+                    CATransaction.begin()
+                    CATransaction.setDisableActions(true)
+                    target.contents = image
+                    CATransaction.commit()
+                }
+                if Thread.isMainThread {
+                    show()
+                } else {
+                    DispatchQueue.main.async(execute: show)
+                }
+            },
+            decompressionOutputRefCon: Unmanaged.passUnretained(layer).toOpaque()
+        )
+    }
+
+    deinit {
+        if let session {
+            VTDecompressionSessionInvalidate(session)
+        }
     }
 
     func enqueue(_ packet: VideoPacket) {
         switch packet {
         case .format(let sets, _, _):
-            format = makeFormat(sets)
-            displayLayer.sampleBufferRenderer.flush()
-            timestamp = .zero
+            guard let format = makeFormat(sets) else { return }
+            self.format = format
+            openSession(format)
         case .audioFormat, .audio:
             break
         case .sample(let isKeyframe, let data):
-            guard let format, let sample = makeSample(data: data, format: format, keyframe: isKeyframe) else { return }
-            if displayLayer.sampleBufferRenderer.status == .failed {
-                displayLayer.sampleBufferRenderer.flush()
-            }
-            displayLayer.sampleBufferRenderer.enqueue(sample)
+            guard let format, let session, let sample = makeSample(data: data, format: format, keyframe: isKeyframe) else { return }
+            var info = VTDecodeInfoFlags()
+            VTDecompressionSessionDecodeFrame(
+                session,
+                sampleBuffer: sample,
+                flags: [],
+                frameRefcon: nil,
+                infoFlagsOut: &info
+            )
         }
+    }
+
+    private func openSession(_ format: CMFormatDescription) {
+        if let session {
+            VTDecompressionSessionInvalidate(session)
+            self.session = nil
+        }
+        guard var callback else { return }
+        var created: VTDecompressionSession?
+        let status = VTDecompressionSessionCreate(
+            allocator: kCFAllocatorDefault,
+            formatDescription: format,
+            decoderSpecification: nil,
+            imageBufferAttributes: [
+                kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA,
+                kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary
+            ] as CFDictionary,
+            outputCallback: &callback,
+            decompressionSessionOut: &created
+        )
+        guard status == noErr, let created else { return }
+        VTSessionSetProperty(created, key: kVTDecompressionPropertyKey_RealTime, value: kCFBooleanTrue)
+        session = created
     }
 
     private func makeFormat(_ sets: [Data]) -> CMFormatDescription? {
@@ -454,11 +508,11 @@ final class H264Display {
             )
         }
         guard copied == kCMBlockBufferNoErr else { return nil }
-        timestamp = CMTimeAdd(timestamp, CMTime(value: 1, timescale: 30))
+        let now = CMClockGetTime(CMClockGetHostTimeClock())
         var timing = CMSampleTimingInfo(
             duration: CMTime(value: 1, timescale: 30),
-            presentationTimeStamp: timestamp,
-            decodeTimeStamp: .invalid
+            presentationTimeStamp: now,
+            decodeTimeStamp: now
         )
         var sampleSize = length
         var sample: CMSampleBuffer?
@@ -477,6 +531,7 @@ final class H264Display {
            let dictionary = attachments.firstObject as? NSMutableDictionary {
             dictionary[kCMSampleAttachmentKey_NotSync] = !keyframe
             dictionary[kCMSampleAttachmentKey_DependsOnOthers] = !keyframe
+            dictionary[kCMSampleAttachmentKey_DisplayImmediately] = true
         }
         return sample
     }

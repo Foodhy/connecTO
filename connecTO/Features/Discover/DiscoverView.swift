@@ -4,8 +4,6 @@ struct DiscoverView: View {
     var browser: MacBrowser
     var onSelect: (DiscoveredMac, LinkMode) -> Void
     @State private var showsGuide = false
-    @State private var pendingMac: DiscoveredMac?
-    @State private var showsChoice = false
 
     var body: some View {
         NavigationStack {
@@ -18,24 +16,32 @@ struct DiscoverView: View {
                     )
                 } else {
                     List(browser.macs) { mac in
-                        Button {
-                            pendingMac = mac
-                            showsChoice = true
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: mac.isWindows ? "desktopcomputer" : "laptopcomputer")
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(mac.name)
-                                    Text(mac.isWindows ? "PC" : "Mac")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
+                        HStack(spacing: 12) {
+                            Image(systemName: mac.isWindows ? "desktopcomputer" : "laptopcomputer")
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(mac.name)
+                                Text(mac.isWindows ? "PC" : "Mac")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Menu {
+                                Button {
+                                    onSelect(mac, .control)
+                                } label: {
+                                    Label("Controlador", systemImage: "cursorarrow.click")
                                 }
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .foregroundStyle(.tertiary)
+                                Button {
+                                    onSelect(mac, .extend)
+                                } label: {
+                                    Label("Monitor", systemImage: "display")
+                                }
+                            } label: {
+                                Image(systemName: "chevron.down.circle")
+                                    .font(.title2)
+                                    .frame(width: 44, height: 44)
                             }
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -51,26 +57,6 @@ struct DiscoverView: View {
             }
             .sheet(isPresented: $showsGuide) {
                 GuideView()
-            }
-            .confirmationDialog(
-                pendingMac?.name ?? "connecTO",
-                isPresented: $showsChoice,
-                titleVisibility: .visible,
-                presenting: pendingMac
-            ) { mac in
-                Button(mac.isWindows ? "Controlar el PC" : "Controlar el Mac") {
-                    onSelect(mac, .control)
-                }
-                if !mac.isWindows {
-                    Button("Monitor externo") {
-                        onSelect(mac, .extend)
-                    }
-                }
-                Button("Cancelar", role: .cancel) {}
-            } message: { mac in
-                Text(mac.isWindows
-                    ? "Controlar muestra una pantalla que el PC ya tiene."
-                    : "Controlar muestra una pantalla que el Mac ya tiene. Monitor externo añade una pantalla más.")
             }
         }
     }

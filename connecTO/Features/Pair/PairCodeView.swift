@@ -12,6 +12,9 @@ struct PairCodeView: View {
         VStack(spacing: 20) {
             Text(macName)
                 .font(.title2.weight(.semibold))
+            Text(isWindows ? "PC" : "Mac")
+                .font(.caption)
+                .foregroundStyle(.secondary)
             Text(isWindows
                 ? "Escribe los 6 dígitos del icono de connecTO, junto al reloj del PC."
                 : "Escribe los 6 dígitos de la barra de menú del Mac.")
